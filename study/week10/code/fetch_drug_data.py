@@ -19,23 +19,23 @@ PILL_INFO_URL = "https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/get
 INGREDIENT_URL = "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtMcpnDtlInq07"
 
 drug_names = [
-    # 두통 / 해열 / 진통
-    "타이레놀", "이부프로펜", "게보린", "부루펜", "애드빌",
+    # 소화제
+    "까스활명수", "베나치오", "베아제", "훼스탈",
 
-    # 소화 / 위장
-    "훼스탈", "베아제", "노루모", "겔포스", "개비스콘",
+    # 숙취해소제
+    "디오니스액", "컨디션", "반하사심탕", "취어스액",
 
-    # 감기 / 기침
-    "판콜", "화이투벤", "테라플루", "판피린", "콜대원",
+    # 알러지약
+    "세노바퀵연질캡슐", "세티리진", "지르텍", "클리어딘",
 
-    # 알러지 / 두드러기
-    "지르텍", "클라리틴", "알레그라",
+    # 종합감기약
+    "콜대원", "모드콜에스", "판콜",
 
-    # 피부 / 상처
-    "후시딘", "마데카솔",
+    # 복통약
+    "장엔폴", "동성정로환", "타라부틴",
 
-    # 눈
-    "아이미루",
+    # 진통제
+    "타이레놀", "게보린", "이지엔6이브", "이브", "부루펜",
 ]
 
 # 약품명에서 제형 추출 (낱알식별 DB에 없는 액상/연고류)
@@ -175,9 +175,9 @@ for item in results:
 print(f"\n중복 제거: {len(results)}개 → {len(unique_results)}개")
 
 # JSON 파일로 저장
-with open("C:/RAG/drug_data.json", "w", encoding="utf-8") as f:
+with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json", "w", encoding="utf-8") as f:
     json.dump(unique_results, f, ensure_ascii=False, indent=2)
 
-print(f"총 {len(unique_results)}개 저장 완료 → C:/RAG/drug_data.json")
+print(f"총 {len(unique_results)}개 저장 완료 → C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json")
 
-print(f"\n총 {len(results)}개 저장 완료 → C:/RAG/drug_data.json")
+print(f"\n총 {len(results)}개 저장 완료 → C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json")
