@@ -14,12 +14,13 @@ from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunct
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from prompts.system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES
+from system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES
 
 load_dotenv()
 
+
 # 1. ChromaDB 로드
-CHROMA_PATH = "C:/RAG/chroma_db"
+CHROMA_PATH = "C:/Team-Ragoon/project-docs/chroma_db"
 
 ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -36,7 +37,7 @@ else:
         embedding_function=ef,
         metadata={"hnsw:space": "cosine"}
     )
-    with open("C:/RAG/drug_documents.json", "r", encoding="utf-8") as f:
+    with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_documents.json", "r", encoding="utf-8") as f:
         documents = json.load(f)
 
     collection.add(
