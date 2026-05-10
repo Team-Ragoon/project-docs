@@ -14,7 +14,13 @@ from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunct
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES
+from system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, EXPAND_SYSTEM_PROMPT
+from validator import SlotValidator
+from analyzer import build_analyzer_chain
+from clarifier import build_clarifier_chain
+from rag import build_rag_chain, build_recommend_chain, build_caution_chain
+from dialogue import DialogueState
+from drug_detector import detect_drug_in_text
 
 load_dotenv()
 
@@ -24,7 +30,6 @@ CHROMA_PATH = "C:/Team-Ragoon/project-docs/chroma_db"
 
 ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
-
 existing = [c.name for c in client.list_collections()]
 
 if "drug_qna" in existing:
@@ -54,12 +59,9 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """당신은 의약품 검색 전문가입니다.
-사용자의 질문을 의학 용어와 일반 용어를 모두 포함해 2가지 다른 표현으로 바꿔주세요.
-각 표현을 새 줄에 작성하고, 번호나 기호 없이 문장만 작성하세요."""),
+    ("system", EXPAND_SYSTEM_PROMPT),
     ("human", "{question}")
 ])
-
 expand_chain = EXPAND_PROMPT | llm | StrOutputParser()
 
 
@@ -97,32 +99,95 @@ def retriever_multi(question: str, n_results: int = 5) -> str:
     return "\n\n".join([d["doc"] for d in sorted_docs])
 
 
-# 5. LangChain 체인 구성
-few_shot_messages = []
-for example in FEW_SHOT_EXAMPLES:
-    few_shot_messages.append(("human", example["question"]))
-    few_shot_messages.append(("ai", example["answer"]))
+class MedicalChatbot:
+    def __init__(self):
+        self.state = DialogueState()
+        self.validator = SlotValidator(llm = llm)
+        self.analyzer = build_analyzer_chain(llm = llm)
+        self.clarifier = build_clarifier_chain(llm = llm)
+        self.recommender = build_recommend_chain(llm= llm)
+        self.caution_answerer = build_caution_chain(llm =llm)
+        self.rag_chain = build_rag_chain(llm = llm)
+        self._pending_subject: str | None = None
+    
+    def chat(self, user_input: str) -> str:
+        detected_drug = detect_drug_in_text(user_input)
+        analysis = self.analyzer.invoke({"user_input" : user_input})
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", SYSTEM_PROMPT),
-    *few_shot_messages,
-    ("human", "[의약품 정보]\n{context}\n\n[사용자 질문]\n{question}")
-])
+        if detected_drug:
+            analysis["drug_name"] = detected_drug
+            analysis["query_type"] = "medication"
+        else:
+            analysis["query_type"] = "symptom_only"
 
-chain = prompt | llm | StrOutputParser()
+            
+        self.state.update_from_analysis(analysis)
 
+        # 직전 역질문 응답 처리
+        if self._pending_subject:
+            self.state.record_clarify_answer(self._pending_subject, user_input)
+            self._pending_subject = None
+        
+        # 증상만 입력 => 바로 약 추천
+        if self.state.query_type == "symptom_only":
+            print("Symptom_only\n")
+            context = retriever_multi(user_input)
+            response = self.rag_chain.invoke({
+                "context" : context,
+                "question": user_input,
+            })
+            self.state.add_turn(user_input, response)
+            return response
 
-# 6. QnA 실행 함수
-def ask(question: str):
-    print(f"\n{'─' * 60}")
-    print(f"🙋 질문: {question}")
-    print(f"{'─' * 60}")
+        # 질문에 약이 포함되어 있음 => 주의사항 기반 역질문
+        if self.state.query_type == "medication":
+            print("Medication\n")
+            if self.validator.should_clarity(
+                self.state.drug_name,
+                self.state.caution_slots,
+                self.state.clarify_count,
+            ):
+                slot = self.validator.get_priority_slot(
+                    self.state.drug_name,
+                    self.state.caution_slots,
+                )
+                self._pending_subject = slot["subject"]
+                self.state.clarify_count += 1
 
-    context = retriever_multi(question)
-    answer = chain.invoke({"context": context, "question": question})
+                response = self.clarifier.invoke({
+                    "filled_slots" : self.state.caution_slots,
+                    "subject" : slot["subject"],
+                    "reason": slot["reason"],
+                    "question": slot["question"],
+                })
+            else:
+                response = self._generate_final_answer()
+            
+            self.state.add_turn(user_input, response)
+            return response
 
-    print(answer)
-    print()
+        return "죄송해요, 상비약 구매에 관련된 질문에만 답변드릴 수 있어요."
+
+def _generate_final_answer(self) -> str:
+    drug_name = self.state.drug_name
+    all_contraindications = self.validator.get_contraindications(drug_name)
+
+    applicable = [
+        f"- {c['subject']}: {c['reason']}"
+        for c in all_contraindications
+        if self.state.caution_slots.get(c["subject"]) is True
+    ]
+
+    return self.caution_answerer.invoke({
+        "drug_name" : drug_name,
+        "symptom" : self.state.symptom or "언급 없음",
+        "user_profile" : ", ".join(
+            f"{s}: {'해당' if v else '해당 없음'}"
+            for s, v in self.state.caution_slots.items()
+        ) or "일반 성인",
+        "applicable_cautions": "\n".join(applicable) or "특별한 금기사항 해당 없음"
+    })
+
 
 
 # 7. 실행 모드 선택
@@ -137,26 +202,24 @@ if __name__ == "__main__":
     mode = input("\n선택 (1 or 2): ").strip()
 
     if mode == "1":
+        bot = MedicalChatbot()
         scenarios = [
-            "임산부인데 두통이 심해요. 처방전 없이 먹을 수 있는 약 있나요?",
-            "8살 아이가 감기로 열이 나요. 어린이용 해열제 추천해주세요.",
-            "운동하고 나서 근육이 너무 아파요. 성인용 진통 소염제 알려주세요.",
-            "과식해서 소화가 안 돼요. 더부룩하고 배가 불편합니다.",
-            "위산이 역류하는 것 같고 속이 쓰려요. 제산제 추천해주세요.",
-            "콧물, 기침, 인후통이 같이 있어요. 감기약 추천해주세요.",
-            "두드러기가 나고 가려워요. 알러지 증상에 먹는 약이 있나요?",
-            "피부에 상처가 났는데 세균 감염이 걱정돼요. 바르는 약 추천해주세요.",
-            "생리통이 너무 심해요. 여성 월경통에 효과 있는 약이 뭔가요?",
-            "눈이 피로하고 충혈됐어요. 안약 추천해주세요.",
+            "두통이 심한데 어떤 약을 먹으면 좋을까?",
+            "두통이 심한데 타이레놀을 먹어도 될까?",
+            "알레르기가 심한데 지르텍 먹어도 될까?"
         ]
         for question in scenarios:
-            ask(question)
+            print(f"\n{'─' * 60}")
+            print(f"🙋 질문: {question}")
+            print(f"{'─' * 60}")
+            print(bot.chat(question))
 
         print("=" * 60)
         print("  테스트 완료")
         print("=" * 60)
 
     elif mode == "2":
+        bot = MedicalChatbot()
         print("\n질문을 입력하세요. 종료하려면 'q' 또는 'quit'을 입력하세요.\n")
         while True:
             question = input("🙋 질문: ").strip()
@@ -165,7 +228,7 @@ if __name__ == "__main__":
             if question.lower() in ("q", "quit"):
                 print("\n종료합니다.")
                 break
-            ask(question)
+            print(bot.chat(question))
 
     else:
         print("잘못된 입력입니다. 1 또는 2를 선택하세요.")
