@@ -18,7 +18,7 @@ from system_prompt import EXPAND_SYSTEM_PROMPT
 from validator import SlotValidator
 from analyzer import build_analyzer_chain
 from clarifier import build_clarifier_chain
-from rag import build_rag_chain, build_recommend_chain,build_summarize_chian, build_recommend_final_chain
+from rag import build_rag_chain, build_recommend_chain,build_summarize_chian, build_cannot_recommend_chain, build_recommend_final_chain
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
@@ -97,6 +97,13 @@ def retriever_multi(question: str, n_results: int = 5) -> str:
 
     # 유사도 순 정렬 후 상위 5개
     sorted_docs = sorted(all_docs.values(), key=lambda x: x["dist"])[:5]
+
+    # 확인용
+    print(f"\n[검색된 문서 목록]")
+    for i, d in enumerate(sorted_docs, 1):
+        print(f"  {i}. 유사도: {d['dist']:.4f}")
+        print(f"     약품명: {d['meta'].get('itemName', '알 수 없음')}")   
+
     return "\n\n".join([d["doc"] for d in sorted_docs])
 
 # Chatbot class 선언
@@ -110,6 +117,7 @@ class MedicalChatbot:
         self.recommend_final = build_recommend_final_chain(llm = llm)
         self.rag_chain = build_rag_chain(llm = llm)
         self.summarizer = build_summarize_chian(llm = llm)
+        self.cannot_recommend = build_cannot_recommend_chain(llm = llm)
         self._pending_subject: str | None = None
         self._pending_question: str | None = None
     
@@ -151,6 +159,10 @@ class MedicalChatbot:
         # 상태 update
         self.state.update_from_analysis(analysis)
 
+        print(f"\n[query_type] {self.state.query_type}")
+        print(f"[symptom]    {self.state.symptom}")
+        print(f"[drug_names] {self.state.drug_names}")
+
         if matched_drugs:
             self.state.set_drug_candidates(matched_drugs, user_keyword)
 
@@ -158,6 +170,10 @@ class MedicalChatbot:
         # 증상만 입력 => 바로 약 추천
         if self.state.query_type == "symptom_only":
             context = retriever_multi(user_input)
+
+            # 확인용
+            print(f"\n[RAG context 전문]")
+            print(context)
             response = self.rag_chain.invoke({
                 "context" : context,
                 "question": user_input,
@@ -230,15 +246,22 @@ class MedicalChatbot:
             if self.state.caution_slots.get(c["subject"]) is True
         ]
 
+        if applicable:
+            # 복용 불가 -> 이유 설명
+            answer = self.cannot_recommend.invoke({
+                "drug_keyword" : drug_keyword,
+                "user_profile" : user_profile,
+                "applicable_cautions" : "\n".join(applicable),
+            })
+        else:
+            answer = self.recommend_final.invoke({
+                "drug_keyword" : drug_keyword,
+                "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
+                "user_profile" : user_profile,
+                "applicable_cautions": "특별한 금기사항 해당 없음",
+            }) 
 
-        recommendation = self.recommend_final.invoke({
-            "drug_keyword" : drug_keyword,
-            "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
-            "user_profile" : user_profile,
-            "applicable_cautions": "\n".join(applicable) or "특별한 금기사항 해당 없음"
-        })
-
-        return f"{summary}\n\n{recommendation}"
+        return f"{summary}\n\n{answer}"
 
 
 """
@@ -248,32 +271,20 @@ class MedicalChatbot:
 """
 
 def run_clarify_test(scenario: dict):
-    """
-    scenario 구조:
-    {
-        "name": "테스트 이름",
-        "first_input": "첫 질문",
-        "answers": {
-            "임산부": "아니요",           # 역질문 subject → 사용자 답변
-            "소아": "아니요",
-            "신장질환자": "네, 있어요",
-        }
-    }
-    """
     print(f"\n{'=' * 60}")
     print(f"  테스트: {scenario['name']}")
     print(f"{'=' * 60}")
 
     bot = MedicalChatbot()
-    MAX_TURNS = 10  # 무한 루프 방지
-
-    # 1턴: 첫 질문
+    MAX_TURNS = 15  # 무한 루프 방지
+    # 첫 턴 : 질문
     user_input = scenario["first_input"]
     turn = 0
 
     while turn < MAX_TURNS:
         print(f"\n🙋 사용자: {user_input}")
         response = bot.chat(user_input)
+        print("\n")
         print(f"🤖 챗봇: {response}")
 
         # 역질문이 끝나고 최종 답변이 나왔으면 종료
@@ -282,8 +293,10 @@ def run_clarify_test(scenario: dict):
 
         # 역질문 subject에 맞는 답변 찾기
         subject = bot._pending_subject
-        if subject in scenario["answers"]:
-            user_input = scenario["answers"][subject]
+        answers = scenario.get("answers", {})
+        if subject in answers:
+            user_input = answers[subject]
+            print(f" -> '{subject}' 답변: {user_input}")
         else:
             # 시나리오에 없는 역질문은 기본값 "아니요"로 응답
             print(f"  ⚠️ '{subject}' 에 대한 시나리오 답변 없음 → 기본값 '아니요' 사용")
@@ -293,34 +306,79 @@ def run_clarify_test(scenario: dict):
 
     print(f"\n{'─' * 60}")
 
+def run_interactive():
+    """
+    직접 질문 입력 모드
+    역질문이 발생하면 사용자가 직접 답변 입력
+    """
+    bot = MedicalChatbot()
+    print("\n질문을 입력하세요. 종료하려면 'q' 또는 'quit'을 입력하세요.\n")
+
+    while True:
+        # 역질문 대기 중이면 답변 입력 안내
+        if bot._pending_subject:
+            user_input = input(f"💬 '{bot._pending_subject}' 에 대한 답변: ").strip()
+        else:
+            user_input = input("🙋 질문: ").strip()
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("q", "quit"):
+            print("\n종료합니다.")
+            break
+
+        response = bot.chat(user_input)
+        print(f"🤖 챗봇: {response}\n")
+
 
 if __name__ == "__main__":
-    scenarios = [
-        {
-            "name": "증상만 입력",
-            "first_input": "알러지 반응이 올라와. 어떤 약을 먹으면 좋을까?",
-        },
-        {
-            "name": "타이레놀 - 간질환 해당",
-            "first_input": "두통이 있는데 타이레놀 먹어도 되나요?",
-            "answers": {
-                "간질환자":  "네, 간염이 있어요",
-                "알코올":   "아니요",
-                "알레르기": "아니요",
-            }
-        },
-        {
-            "name": "이부프로펜 - 특이사항 없음",
-            "first_input": "이부프로펜 먹으려고요",
-            "answers": {
-                "임산부":    "아니요",
-                "소아":      "아니요",
-                "신장질환자": "아니요",
-                "소화성 궤양": "아니요",
-            }
-        },
-    ]
+    print("=" * 60)
+    print("  의약품 RAG QnA - Query Expansion 버전")
+    print("=" * 60)
+    print("\n실행 모드를 선택하세요:")
+    print("  1. 시나리오 테스트 (자동 실행)")
+    print("  2. 직접 질문 입력")
 
-    for scenario in scenarios:
-        run_clarify_test(scenario)
+    mode = input("\n선택 (1/2): ").strip()
+    if mode == "1":
+        scenarios = [
+            {
+                "name": "증상만 입력(1) - 알러지",
+                "first_input": "알러지 반응이 올라와. 어떤 약을 먹으면 좋을까?",
+            },
+            {
+                "name": "증상만 입력(2) - 피부 습진",
+                "first_input": "피부 습진 때문에 고민이야. 어떤 약이 좋을까?",
+            },
+            {
+                "name": "증상만 입력(3) - 비염으로 인한 가려움",
+                "first_input": "비염 때문에 너무 가려워. 어떤 약이 효과가 있을까?",
+            },
+            # {
+            #     "name": "세노바퀵",
+            #     "first_input": "알러지 때문에 비염이 심한데 세노바퀵 먹어도 될까?",
+            #     "answers": {
+            #         "과민증" : "네",
+            #         "임산부" : "아니요",
+            #     }
+            # },
+            # {
+            #     "name": "세트린",
+            #     "first_input": "세트린을 복용하려고 해.",
+            #     "answers": {
+            #         "임산부":    "네",
+            #         "소아":      "아니요",
+            #         "간장애": "아니요",
+            #         "신장애": "네",
+            #     }
+            # },
+        ]
 
+        for scenario in scenarios:
+            run_clarify_test(scenario)
+    
+    elif mode == "2":
+        run_interactive()        
+
+    else:
+        print("잘못된 입력입니다. 1/2 중에서 선택하세요.")

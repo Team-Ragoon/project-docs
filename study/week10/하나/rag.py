@@ -4,7 +4,8 @@ from langchain_core.output_parsers import StrOutputParser
 from system_prompt import (
     SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, 
     SUMMARIZE_HUMAN_PROMPT, SUMMARIZE_SYSTEM_PROMPT,
-    RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT
+    RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT,
+    CANNOT_RECOMMEND_SYSTEM_PROMPT, CANNOT_RECOMMEND_HUMAN_PROMPT,
     )
 
 
@@ -47,3 +48,11 @@ def build_recommend_final_chain(llm: ChatOpenAI):
         ("human", RECOMMEND_FINAL_HUMAN_PROMPT),
     ])
     return prompt | llm | StrOutputParser()
+
+def build_cannot_recommend_chain(llm: ChatOpenAI):
+    # 복용 불가 시 이유 설명
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", CANNOT_RECOMMEND_SYSTEM_PROMPT),
+        ("human", CANNOT_RECOMMEND_HUMAN_PROMPT),
+    ])
+    return prompt | llm | StrOutputParser()    
