@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from functools import lru_cache
 
-DB_PATH = r"C:\Users\hanna\캡스톤_project\project-docs\study\week10\dataset\drug_data.json"
+DB_PATH = r"C:\Team-Ragoon\project-docs\study\week10\dataset\drug_data.json"
 
 @lru_cache(maxsize=1)
 def _load_db() -> list[dict]:
