@@ -1,7 +1,11 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, CAUTION_SYSTEM_PROMPT, CAUTION_HUMAN_PROMPT
+from system_prompt import (
+    SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, 
+    SUMMARIZE_HUMAN_PROMPT, SUMMARIZE_SYSTEM_PROMPT,
+    RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT
+    )
 
 
 def build_rag_chain(llm: ChatOpenAI):
@@ -28,10 +32,18 @@ def build_recommend_chain(llm: ChatOpenAI):
     return prompt | llm | StrOutputParser()
 
 
-def build_caution_chain(llm: ChatOpenAI):
-    # 약까지 입력 -> 주의사항 확인 후 최종 답변
+def build_summarize_chian(llm: ChatOpenAI):
+    # 역질문 후 사용자의 상황 요약하기
     prompt = ChatPromptTemplate.from_messages([
-        ("system", CAUTION_SYSTEM_PROMPT),
-        ("human", CAUTION_HUMAN_PROMPT)
+        ("system", SUMMARIZE_SYSTEM_PROMPT),
+        ("human", SUMMARIZE_HUMAN_PROMPT),
+    ])
+    return prompt | llm | StrOutputParser()
+
+def build_recommend_final_chain(llm: ChatOpenAI):
+    # 사용자 상황 기반 최종 약 추천
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", RECOMMEND_FINAL_SYSTEM_PROMPT),
+        ("human", RECOMMEND_FINAL_HUMAN_PROMPT),
     ])
     return prompt | llm | StrOutputParser()

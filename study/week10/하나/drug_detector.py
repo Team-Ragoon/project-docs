@@ -40,16 +40,29 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if len(t) >= MIN_TOKEN_LEN]
 
 
-def detect_drug_in_text(text: str) -> str | None:
-    # 텍스트에서 DB 약 이름 탐지.
+def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
+    # 텍스트에서 DB 약 이름 탐지. (약 이름 전체와 사용자 입력 키워드 반환)
     drug_names = list_drug_names()
     tokens = _tokenize(text)
 
+    matched = []
+    user_keyword = None # 사용자가 입력한 약 키워드
+
     for name in drug_names:
         for token in tokens:
+            # 1차: 토큰이 약 이름에 포함
             if token in name:
-                return name
-
+                if name not in matched:
+                    matched.append(name)
+                if not user_keyword:
+                    user_keyword = token
+                break
+            
+            #2차: Fuzzy 매칭
             if fuzz.ratio(token, name) >= FUZZY_THRESHOLD:
-                return name
-    return None
+                if name not in matched:
+                    matched.append(name)
+                if not user_keyword:
+                    user_keyword = token
+                break
+    return matched, user_keyword

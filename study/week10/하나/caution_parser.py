@@ -35,25 +35,51 @@ def build_caution_parser_chain(llm: ChatOpenAI):
 _cache: dict[str, tuple[dict, ...]] = {}
 
 
-def parse_contraindications(drug_name: str, llm: ChatOpenAI) -> tuple[dict, ...]:
+def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) -> tuple[dict, ...]:
     # lru_cache는 list caching 불가능 -> tuple 반환.
-    # 약 이름을 사용해서 금기 대상 구조화하기.
+    # 여러 약의 주의사항을 합산해서 parsing 
     # llm이 subject , reason 등의 구조로 정제하는 역할을 함.
     # 결과를 _cache에 저장해 동일 약 재파싱 방지
-    if drug_name in _cache:
-        return _cache[drug_name]
     
-    texts = get_drug_all_caution_texts(drug_name)
-
-    combined = texts["atpnQesitm"] + "\n" + texts["intrcQesitm"]
-    # 두 field 합쳐서 금기 문장 추출하기
+    # cache key : 약 이름 목록을 정렬해서 문자열로
+    cache_key = "|".join(sorted(drug_names))
+    if cache_key in _cache:
+        return _cache[cache_key]
+    
+    # 후보 약 전체 주의사항 합산
+    combined_texts = []
+    for drug_name in drug_names:
+        print(drug_name)
+        texts = get_drug_all_caution_texts(drug_name)
+        combined_texts.append(texts["atpnQesitm"])
+        combined_texts.append(texts["intrcQesitm"])
+    
+    combined = "\n".join(t for t in combined_texts if t)
     sentences = _extract_contraindication_sentencese(combined)
 
     if not sentences:
-        _cache[drug_name] = ()
+        _cache[cache_key] = ()
         return ()
+
     
     chain = build_caution_parser_chain(llm)
     result = tuple(chain.invoke({"sentences" : "\n".join(sentences)}))
-    _cache[drug_name] = result
-    return result
+
+    # subject 중복 제거
+    seen = set()
+    deduped = []
+    for item in result:
+        if item["subject"] not in seen:
+            seen.add(item["subject"])
+            deduped.append(item)
+
+    _cache[cache_key] = tuple(deduped)
+
+    # ── 확인용 출력 ──────────────────────────────────────
+    print("\n[역질문 목록]")
+    for i, item in enumerate(_cache[cache_key], 1):
+        print(f"  {i}. subject: {item['subject']}")
+        print(f"     question: {item['question']}")
+        print(f"     reason:   {item['reason']}")
+    # ────────────────────────────────────────────────────   
+    return _cache[cache_key]

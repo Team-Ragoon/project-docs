@@ -38,3 +38,19 @@ def get_drug_all_caution_texts(drug_name: str) -> dict[str, str]:
 def list_drug_names() -> list[str]:
     # lru_cache 적용 -> 파일 중복 읽기 방지
     return [item["itemName"] for item in _load_db()]
+
+def find_drugs_by_keyword(keyword: str) -> list[str]:
+    # 키워드를 포함하는 약 이름 전체 반환
+    return [
+        item["itemName"] for item in _load_db()
+        if keyword in item["itemName"]
+    ]
+
+def get_drug_all_caution_texts(drug_name: str) -> dict[str,str]:
+    drug = _find_drug(drug_name)
+    if not drug: 
+        return {"atpnQesitm" : "", "intrcQesitm" : ""}
+    return{
+        "atpnQesitm" : (drug.get("atpnQesitm") or "").strip(),
+        "intrcQesitm" : (drug.get("intrcQuesitm") or "").strip(),
+    }
