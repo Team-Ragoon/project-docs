@@ -15,6 +15,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from prompts.system_prompt import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES
+import re
 
 load_dotenv()
 
@@ -111,14 +112,79 @@ prompt = ChatPromptTemplate.from_messages([
 chain = prompt | llm | StrOutputParser()
 
 
+# 5.1 Clarification 체인 추가: 필요한 추가 정보 식별
+CLARIFY_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """당신은 의약품 정보의 충분성 판별자입니다.
+주어진 [의약품 정보]와 사용자의 질문을 보고, 정확한 약 추천을 위해 '추가로 필요한 정보'가 있으면
+간단한 문장 질문으로 각각 새 줄에 출력하세요. 정보가 충분하면 단어 ENOUGH 만 출력하세요.
+출력은 번호나 기호 없이 질문만 새 줄에 작성하세요."""),
+    ("human", "[의약품 정보]\n{context}\n\n[사용자 질문]\n{question}")
+])
+
+clarify_chain = CLARIFY_PROMPT | llm | StrOutputParser()
+
+def _extract_keywords(text: str) -> set:
+    # 한글(2자 이상)과 영숫자 키워드 추출
+    if not text:
+        return set()
+    korean = re.findall(r"[가-힣]{2,}", text)
+    alnum = re.findall(r"[A-Za-z0-9]{2,}", text)
+    kws = set(korean + alnum)
+    # 소문자 정규화
+    return {k.lower() for k in kws}
+
+
+def is_context_sufficient(question: str, context: str) -> bool:
+    """
+    간단 휴리스틱:
+    - 질문에서 추출한 키워드(증상·대상 등)가 context(의약품 정보)에 하나라도 포함되어 있으면 충분하다고 판단.
+    - 의학적 판단을 완전히 대체하지 않음. 필요하면 조건을 조정하세요.
+    """
+    qk = _extract_keywords(question)
+    ck = _extract_keywords(context)
+    if not qk or not ck:
+        return False
+    # 교집합이 있으면 충분한 근거가 있다고 판단
+    return len(qk & ck) > 0
+
+
 # 6. QnA 실행 함수
 def ask(question: str):
     print(f"\n{'─' * 60}")
     print(f"🙋 질문: {question}")
     print(f"{'─' * 60}")
 
+    # 1) 기본 검색으로 컨텍스트 수집
     context = retriever_multi(question)
-    answer = chain.invoke({"context": context, "question": question})
+
+    # 1.1 휴리스틱으로 우선 판정 — 질문 키워드가 컨텍스트에 포함되면 충분하다고 가정
+    if is_context_sufficient(question, context):
+        final_context = context
+        print("ℹ️ 휴리스틱: 질문의 핵심 단어가 컨텍스트와 일치하므로 추가 질의 없이 진행합니다.")
+    else:
+        # 2) LLM에게 충분한지 확인하도록 요청
+        clarify_out = clarify_chain.invoke({"context": context, "question": question}).strip()
+        # 간단 판정: ENOUGH 포함이면 충분하다고 봄
+        if "ENOUGH" in clarify_out.upper() or "충분" in clarify_out:
+            final_context = context
+        else:
+            # 필요 정보 목록 파싱 (빈 줄 제거)
+            questions_needed = [line.strip() for line in clarify_out.splitlines() if line.strip()]
+            if questions_needed:
+                print("\n🔎 추가 정보가 필요합니다. 아래 질문에 답해 주세요:")
+                answers = []
+                for q in questions_needed:
+                    ans = input(f"- {q}\n  답변: ").strip()
+                    answers.append((q, ans))
+
+                # 사용자의 답변을 컨텍스트에 포함
+                extra_section = "\n\n[추가 사용자 응답]\n" + "\n".join(f"Q: {q}\nA: {a}" for q, a in answers)
+                final_context = context + extra_section
+            else:
+                final_context = context
+
+    # 3) 최종 체인 실행 (최종 컨텍스트 포함)
+    answer = chain.invoke({"context": final_context, "question": question})
 
     print(answer)
     print()
