@@ -9,18 +9,32 @@ class DialogueState:
         self.caution_slots : dict = {}
         self.clarify_count : int = 0
         self._history : list = []
+
+    def start_new_turn(self):
+        self.query_type = None
+        self.symptom = None
+        self.caution_slots = {}
+        self.clarify_count = 0
     
     def update_from_analysis(self, analysis: dict):
         # query_type은 매 turn 갱신
         self.query_type = analysis.get("query_type")
-        if analysis.get("symptom") and not self.symptom:
-            self.symptom = analysis["symptom"]
+        #if analysis.get("symptom") and not self.symptom:
+        self.symptom = analysis.get("symptom")
 
     def set_drug_candidates(self, drug_names: list[str], keyword: str):
         # 후보 약 목록 및 사용자 키워드 저장하기
         if not self.drug_names:
             self.drug_names = drug_names
             self.drug_keyword = keyword
+    
+    def apply_extracted_situation(self, situation: dict):
+        # 사용자 입력에서 추출한 상황을 caution_slots에 사전 저장. (null은 저장 x)
+        for subject, value in situation.items():
+            # value in not None and
+            if subject not in self.caution_slots:
+                self.caution_slots[subject] = value
+                print(f" [사전 추출]{subject}: {'해당' if value else '해당 없음'}")
     
     def record_clarify_answer(self, subject: str, is_positive: bool):
         # 역질문 응답에 대해 예/아니오 판단은 호출하는 chat에서 처리한 후 bool로 전달
