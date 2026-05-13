@@ -7,6 +7,7 @@ RAG 기반 의약품 QnA 시스템 - Query Expansion 버전
 """
 
 import os
+import shutil
 import json
 import chromadb
 from dotenv import load_dotenv
@@ -16,9 +17,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from system_prompt import EXPAND_SYSTEM_PROMPT
 from validator import SlotValidator
-from analyzer import build_analyzer_chain
+from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain
-from rag import build_rag_chain, build_recommend_chain,build_summarize_chian, build_cannot_recommend_chain, build_recommend_final_chain
+from rag import (
+    build_rag_chain, build_recommend_chain,build_summarize_chian,
+    build_cannot_recommend_chain, build_recommend_final_chain,)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
@@ -33,6 +36,7 @@ ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 existing = [c.name for c in client.list_collections()]
 
+
 if "drug_qna" in existing:
     collection = client.get_collection(name="drug_qna", embedding_function=ef)
     print(f"✅ 저장된 ChromaDB 로드 완료 ({collection.count()}개 문서)\n")
@@ -43,7 +47,7 @@ else:
         embedding_function=ef,
         metadata={"hnsw:space": "cosine"}
     )
-    with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_documents.json", "r", encoding="utf-8") as f:
+    with open(r"C:\Team-Ragoon\project-docs\study\week10\dataset\drug_documents.json", "r", encoding="utf-8") as f:
         documents = json.load(f)
 
     collection.add(
@@ -70,7 +74,7 @@ def expand_query(question: str) -> list[str]:
     """LLM으로 쿼리를 확장해 다양한 표현 생성"""
     expanded = expand_chain.invoke({"question": question})
     extra_queries = [q.strip() for q in expanded.strip().split("\n") if q.strip()]
-    queries = [question] + extra_queries[:2]  # 원본 + 최대 2개
+    queries = [question] + extra_queries[:3]  # 원본 + 최대 3개
     return queries
 
 
@@ -93,16 +97,18 @@ def retriever_multi(question: str, n_results: int = 5) -> str:
             key = meta.get("item_seq", doc[:50])
             # 같은 문서면 유사도 높은 것(dist 낮은 것)만 유지
             if key not in all_docs or dist < all_docs[key]["dist"]:
-                all_docs[key] = {"doc": doc, "dist": dist}
+                all_docs[key] = {"doc": doc, "meta" : meta, "dist": dist}
+    
 
     # 유사도 순 정렬 후 상위 5개
     sorted_docs = sorted(all_docs.values(), key=lambda x: x["dist"])[:5]
+
 
     # 확인용
     print(f"\n[검색된 문서 목록]")
     for i, d in enumerate(sorted_docs, 1):
         print(f"  {i}. 유사도: {d['dist']:.4f}")
-        print(f"     약품명: {d['meta'].get('itemName', '알 수 없음')}")   
+        print(f"     약품명: {d['meta'].get('drug_name')}") 
 
     return "\n\n".join([d["doc"] for d in sorted_docs])
 
@@ -112,6 +118,7 @@ class MedicalChatbot:
         self.state = DialogueState()
         self.validator = SlotValidator(llm = llm)
         self.analyzer = build_analyzer_chain(llm = llm)
+        self.situation_extractor = build_situation_extractor_chain(llm = llm)
         self.clarifier = build_clarifier_chain(llm = llm)
         self.recommender = build_recommend_chain(llm= llm)
         self.recommend_final = build_recommend_final_chain(llm = llm)
@@ -132,51 +139,71 @@ class MedicalChatbot:
             self._pending_subject = None
             self._pending_question = None
 
-            # ── 확인용 출력 ──────────────────────────────────────
+            #── 확인용 출력 ──────────────────────────────────────
             print("\n[caution_slots 현재 상태]")
             for subject, value in self.state.caution_slots.items():
                 status = "해당" if value else "해당 없음" if value is False else "미응답"
                 print(f"  {subject}: {status}")
-            # ────────────────────────────────────────────────────
+            #────────────────────────────────────────────────────
 
             # 저장 후 바로 다음 역질문 / 최종 답변으로 이동
             return self._next_clarify_or_answer(user_input)
         
+        self.state.start_new_turn()
+        
         # 후보 약 탐지 (복수 개)
         matched_drugs, user_keyword = detect_drugs_in_text(user_input)
+
 
         analysis = self.analyzer.invoke({
             "history": self.state.get_history(), 
             "user_input" : user_input,
         })
 
+        print(f"[analysis 전체] {analysis}")
+
         if matched_drugs:
             analysis["query_type"] = "medication"
-        else:
-            if analysis.get("symptom"):
+            self.state.set_drug_candidates(matched_drugs, user_keyword)
+        elif not analysis.get("query_type") and analysis.get("symptom"):
                 analysis["query_type"] = "symptom_only"
             
         # 상태 update
         self.state.update_from_analysis(analysis)
 
-        print(f"\n[query_type] {self.state.query_type}")
-        print(f"[symptom]    {self.state.symptom}")
         print(f"[drug_names] {self.state.drug_names}")
 
-        if matched_drugs:
-            self.state.set_drug_candidates(matched_drugs, user_keyword)
 
+        if self.state.query_type == "medication":
+            try:
+                situation = self.situation_extractor.invoke({
+                    "user_input" : user_input
+                })
+            except Exception as e:
+                print(f" [상황 추출 실패] {e}")
+                situation = {}
+            
+            if situation:
+                # 미리 추출한 금기 사항 가져오기
+                caution_subjects = [
+                    c["subject"]
+                    for c in self.validator.get_contraindications(self.state.drug_names)
+                ] if self.state.drug_names else []
+
+                self.state.apply_extracted_situation(situation, caution_subjects)
+
+            print(f"[caution_slots] {self.state.caution_slots}")
+            print(f"[extra_context] {self.state.extra_context}")
+        
 
         # 증상만 입력 => 바로 약 추천
         if self.state.query_type == "symptom_only":
+            
             context = retriever_multi(user_input)
 
-            # 확인용
-            print(f"\n[RAG context 전문]")
-            print(context)
             response = self.rag_chain.invoke({
-                "context" : context,
-                "question": user_input,
+                    "context" : context,
+                    "question": user_input,
             })
             self.state.add_turn(user_input, response)
             return response
@@ -227,12 +254,23 @@ class MedicalChatbot:
             status = "해당" if value else "해당 없음"
             lines.append(f"-{subject} : {status}")
         return "\n".join(lines) if lines else "- 특이사항 없음"
+    
+    def _build_extra_context(self) -> str:
+        # 비금기 상황 text 변환
+        if not self.state.extra_context:
+            return ""
+        lines = []
+        for subject, value in self.state.extra_context.items():
+            status = "해당" if value else "해당 없음"
+            lines.append(f"- {subject} : {status}")
+        return "\n".join(lines)
 
     def _generate_final_answer(self) -> str:
         drug_names =self.state.drug_names
         drug_keyword = self.state.drug_keyword
         all_contraindications = self.validator.get_contraindications(drug_names)
         user_profile = self._build_user_profile()
+        extra_context = self._build_extra_context()
 
         summary = self.summarizer.invoke({
             "drug_name" : drug_keyword,
@@ -259,6 +297,7 @@ class MedicalChatbot:
                 "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
                 "user_profile" : user_profile,
                 "applicable_cautions": "특별한 금기사항 해당 없음",
+                "extra_context" : extra_context or "없음",
             }) 
 
         return f"{summary}\n\n{answer}"
@@ -318,6 +357,7 @@ def run_interactive():
         # 역질문 대기 중이면 답변 입력 안내
         if bot._pending_subject:
             user_input = input(f"💬 '{bot._pending_subject}' 에 대한 답변: ").strip()
+            print("\n")
         else:
             user_input = input("🙋 질문: ").strip()
 
@@ -328,7 +368,7 @@ def run_interactive():
             break
 
         response = bot.chat(user_input)
-        print(f"🤖 챗봇: {response}\n")
+        print(f"🤖 챗봇: {response}")
 
 
 if __name__ == "__main__":
@@ -343,16 +383,20 @@ if __name__ == "__main__":
     if mode == "1":
         scenarios = [
             {
-                "name": "증상만 입력(1) - 알러지",
-                "first_input": "알러지 반응이 올라와. 어떤 약을 먹으면 좋을까?",
+                "name": "증상만 입력(1)",
+                "first_input": "비염이 있는데 눈이 따가워.",
             },
             {
-                "name": "증상만 입력(2) - 피부 습진",
-                "first_input": "피부 습진 때문에 고민이야. 어떤 약이 좋을까?",
+                "name": "증상만 입력(2)",
+                "first_input": "비염이 있는데 눈이 뜨거워.",
             },
             {
-                "name": "증상만 입력(3) - 비염으로 인한 가려움",
-                "first_input": "비염 때문에 너무 가려워. 어떤 약이 효과가 있을까?",
+                "name": "증상만 입력(3) ",
+                "first_input": "비염 때문에 눈의 작열감이 느껴져.",
+            },
+            {
+                "name": "증상만 입력(4) ",
+                "first_input": "비염 때문에 눈에 작열감이 느껴져.",
             },
             # {
             #     "name": "세노바퀵",

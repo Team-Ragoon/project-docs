@@ -53,6 +53,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
         texts = get_drug_all_caution_texts(drug_name)
         combined_texts.append(texts["atpnQesitm"])
         combined_texts.append(texts["intrcQesitm"])
+        #combined_texts.append(texts["atpnWarnQesitm"])
     
     combined = "\n".join(t for t in combined_texts if t)
     sentences = _extract_contraindication_sentencese(combined)

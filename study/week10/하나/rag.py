@@ -6,6 +6,7 @@ from system_prompt import (
     SUMMARIZE_HUMAN_PROMPT, SUMMARIZE_SYSTEM_PROMPT,
     RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT,
     CANNOT_RECOMMEND_SYSTEM_PROMPT, CANNOT_RECOMMEND_HUMAN_PROMPT,
+    RAG_HUMAN_PROMPT
     )
 
 
@@ -19,10 +20,11 @@ def build_rag_chain(llm: ChatOpenAI):
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
         *few_shot_messages,
-        ("human", "[의약품 정보]\n{context}\n\n[사용자 질문]\n{question}")
+        ("human", RAG_HUMAN_PROMPT)
     ])
 
     return prompt | llm | StrOutputParser()
+
 
 def build_recommend_chain(llm: ChatOpenAI):
     # 증상만 입력 -> 바로 약 추천
