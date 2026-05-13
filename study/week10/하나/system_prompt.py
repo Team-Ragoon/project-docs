@@ -250,7 +250,8 @@ RECOMMEND_FINAL_SYSTEM_PROMPT = """ 당신은 전문 약사 AI입니다.
    - 제공된 정보에 없는 약은 언급하지 마세요.
    - 확실하지 않은 경우 "정보가 부족합니다"라고 말하세요.
 
-2. 해당되는 금기만 강조, 해당 없는 항목은 언급하지 마세요.
+2. 해당되는 금기만 강조, 해당 없는 항목은 언급하지 마세요. 금기사항에 해당하는 약은 제외하기.
+   사용자가 밝힌 비금기 상황(예: 고령자, 당뇨 등)도 추천 시 반드시 고려
 
 3. 다음 대상자는 반드시 별도로 언급하고 주의를 당부하세요:
    - 임부 또는 수유부
@@ -298,13 +299,16 @@ RECOMMEND_FINAL_HUMAN_PROMPT = """사용자가 언급한 약 키워드: {drug_ke
 후보 약 목록:
 {drug_candidates}
 
-사용자 상황:
+사용자 상황(금기 검토 완료):
 {user_profile}
+
+추가 고려 상황(금기는 아니나 추천 시 반영):
+{extra_context}
 
 해당 금기사항:
 {applicable_cautions}
 
-→ 위 상황에 맞는 약을 추천해주세요."""
+→ 위 상황을 모두 고려해서 가장 적합한 약을 추천해주세요."""
 
 CANNOT_RECOMMEND_SYSTEM_PROMPT = (
    """ 당신은 전문 약사 AI입니다.
@@ -331,26 +335,21 @@ CANNOT_RECOMMEND_HUMAN_PROMPT = """ 사용자가 언급한 약 키워드 : {drug
 SITUATION_EXTRACT_SYSTEM_PROMPT = """사용자의 입력에서 본인의 신체적 상황이나 조건을 추출해 JSON으로만 응답하세요.
 마크다운 없이 순수 JSON만 출력하세요.
 
-추출 가능한 상황 목록 (해당되는 것만 추출):
-{
-  "임산부": true/false/null,
-  "소아": true/false/null,
-  "신장질환자": true/false/null,
-  "간질환자": true/false/null,
-  "심장질환자": true/false/null,
-  "고혈압환자": true/false/null,
-  "소화성궤양환자": true/false/null,
-  "과민증환자": true/false/null,
-  "고령자": true/false/null,
-  "혈액응고제복용자": true/false/null,
-  "당뇨환자": true/false/null,
-  "알레르기환자": true/false/null
-}
+추출 가능한 상황 목록:
+"임산부", "소아", "신장질환자", "간질환자", "심장질환자",
+"고혈압환자", "소화성궤양환자", "과민증환자", "고령자",
+"혈액응고제복용자", "당뇨환자", "알레르기환자"
+
+출력 형식 (언급된 항목만 포함):
+{{
+  "임산부": true,
+  "소아": false
+}}
 
 규칙:
 - 명시적으로 언급된 상황만 추출
 - 해당된다고 밝히면 true, 아니라고 밝히면 false
-- 언급이 없으면 null (추출하지 않음)
+- 언급이 없으면 해당 key 자체를 포함하지 않음.
 - 모두 언급 없으면 {{}} 반환"""
 
 SITUATION_EXTRACT_HUMAN_PROMPT = "사용자 입력: {user_input}"

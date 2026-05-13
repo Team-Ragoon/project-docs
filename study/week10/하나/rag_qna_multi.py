@@ -139,20 +139,21 @@ class MedicalChatbot:
             self._pending_subject = None
             self._pending_question = None
 
-            # ── 확인용 출력 ──────────────────────────────────────
-            # print("\n[caution_slots 현재 상태]")
-            # for subject, value in self.state.caution_slots.items():
-            #     status = "해당" if value else "해당 없음" if value is False else "미응답"
-            #     print(f"  {subject}: {status}")
-            # ────────────────────────────────────────────────────
+            #── 확인용 출력 ──────────────────────────────────────
+            print("\n[caution_slots 현재 상태]")
+            for subject, value in self.state.caution_slots.items():
+                status = "해당" if value else "해당 없음" if value is False else "미응답"
+                print(f"  {subject}: {status}")
+            #────────────────────────────────────────────────────
 
             # 저장 후 바로 다음 역질문 / 최종 답변으로 이동
             return self._next_clarify_or_answer(user_input)
         
+        self.state.start_new_turn()
+        
         # 후보 약 탐지 (복수 개)
         matched_drugs, user_keyword = detect_drugs_in_text(user_input)
 
-        self.state.start_new_turn()
 
         analysis = self.analyzer.invoke({
             "history": self.state.get_history(), 
@@ -171,6 +172,27 @@ class MedicalChatbot:
         self.state.update_from_analysis(analysis)
 
         print(f"[drug_names] {self.state.drug_names}")
+
+        if self.state.query_type == "medication":
+            try:
+                situation = self.situation_extractor.invoke({
+                    "user_input" : user_input
+                })
+            except Exception as e:
+                print(f" [상황 추출 실패] {e}")
+                situation = {}
+            
+            if situation:
+                # 미리 추출한 금기 사항 가져오기
+                caution_subjects = [
+                    c["subject"]
+                    for c in self.validator.get_contraindications(self.state.drug_names)
+                ] if self.state.drug_names else []
+
+                self.state.apply_extracted_situation(situation, caution_subjects)
+
+            print(f"[caution_slots] {self.state.caution_slots}")
+            print(f"[extra_context] {self.state.extra_context}")
         
 
         # 증상만 입력 => 바로 약 추천
@@ -182,8 +204,6 @@ class MedicalChatbot:
                 "question": user_input,
             })
             self.state.add_turn(user_input, response)
-            self.state.drug_names = []
-            self.state.symptom = None
             return response
 
         # 질문에 약이 포함되어 있음 => 주의사항 기반 역질문
@@ -232,12 +252,23 @@ class MedicalChatbot:
             status = "해당" if value else "해당 없음"
             lines.append(f"-{subject} : {status}")
         return "\n".join(lines) if lines else "- 특이사항 없음"
+    
+    def _build_extra_context(self) -> str:
+        # 비금기 상황 text 변환
+        if not self.state.extra_context:
+            return ""
+        lines = []
+        for subject, value in self.state.extra_context.items():
+            status = "해당" if value else "해당 없음"
+            lines.append(f"- {subject} : {status}")
+        return "\n".join(lines)
 
     def _generate_final_answer(self) -> str:
         drug_names =self.state.drug_names
         drug_keyword = self.state.drug_keyword
         all_contraindications = self.validator.get_contraindications(drug_names)
         user_profile = self._build_user_profile()
+        extra_context = self._build_extra_context()
 
         summary = self.summarizer.invoke({
             "drug_name" : drug_keyword,
@@ -264,10 +295,9 @@ class MedicalChatbot:
                 "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
                 "user_profile" : user_profile,
                 "applicable_cautions": "특별한 금기사항 해당 없음",
+                "extra_context" : extra_context or "없음",
             }) 
 
-        self.state.drug_names = []
-        self.state.symptom = None
         return f"{summary}\n\n{answer}"
 
 

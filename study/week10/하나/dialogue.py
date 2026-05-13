@@ -7,13 +7,17 @@ class DialogueState:
         self.drug_names : list[str] = [] # DB 후보 약 목록(검색용)
         self.drug_keyword : str | None = None # 사용자 입력 키워드 (출력용)
         self.caution_slots : dict = {}
+        self.extra_context: dict = {} 
         self.clarify_count : int = 0
         self._history : list = []
 
     def start_new_turn(self):
         self.query_type = None
         self.symptom = None
+        self.drug_names = []
+        self.drug_keyword = None
         self.caution_slots = {}
+        self.extra_context = {}
         self.clarify_count = 0
     
     def update_from_analysis(self, analysis: dict):
@@ -28,14 +32,23 @@ class DialogueState:
             self.drug_names = drug_names
             self.drug_keyword = keyword
     
-    def apply_extracted_situation(self, situation: dict):
-        # 사용자 입력에서 추출한 상황을 caution_slots에 사전 저장. (null은 저장 x)
+    def apply_extracted_situation(self, situation: dict, caution_subjects: list[str]):
+        # 사용자 입력에서 추출한 상황을 금기 여부에 따라 분류
+        # 금기 목록에 존재 -> caution_slots에 저장(역질문 skip), 금기 목록에 X  -> extra_context에 저장(추천 시 고려)
         for subject, value in situation.items():
-            # value in not None and
-            if subject not in self.caution_slots:
-                self.caution_slots[subject] = value
-                print(f" [사전 추출]{subject}: {'해당' if value else '해당 없음'}")
-    
+            if subject in caution_subjects: 
+                # 금기 사항이라면 caution_slots에 저장.
+                if subject not in self.caution_slots:
+                    self.caution_slots[subject] = value
+                    status = "해당" if value else "해당 없음"
+                    print(f" [금기 사전 저장]{subject}: {status}")
+            else:
+                # 비금기 항목 -> 추천할 때 고려.
+                if subject not in self.extra_context:
+                    self.extra_context[subject] = value
+                    status = "해당" if value else "해당 없음"
+                    print(f" [비금기 상황 저장] {subject}: {status}")
+
     def record_clarify_answer(self, subject: str, is_positive: bool):
         # 역질문 응답에 대해 예/아니오 판단은 호출하는 chat에서 처리한 후 bool로 전달
         # 이 함수는 저장만 담당함.
