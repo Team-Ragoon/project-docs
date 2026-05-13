@@ -25,13 +25,14 @@ def _find_drug(drug_name: str) -> dict | None:
 
 
 def get_drug_all_caution_texts(drug_name: str) -> dict[str, str]:
-    # atpnQesitm(복용 주의사항) , intrcQesitm(함께 복용하지 말아야 하는 주의사항) 2개의 정보를 동시 반환
+    # atpnQesitm , intrcQesitm, atpnWarnQesitm 3개의 정보를 동시 반환
     drug = _find_drug(drug_name)
     if not drug:
-        return {"atpnQesitm": "", "intrcQesitm": ""}
+        return {"atpnQesitm": "", "intrcQesitm": "", } #"atpnWarnQesitm": ""}
     return {
         "atpnQesitm" : (drug.get("atpnQesitm") or "").strip(),
         "intrcQesitm" : (drug.get("intrcQesitm") or "").strip(),
+        #"atpnWarnQesitm" : (drug.get("atpnWarnQesitm") or "").strip(),
     }
 
 @lru_cache(maxsize = 1)
@@ -45,12 +46,3 @@ def find_drugs_by_keyword(keyword: str) -> list[str]:
         item["itemName"] for item in _load_db()
         if keyword in item["itemName"]
     ]
-
-def get_drug_all_caution_texts(drug_name: str) -> dict[str,str]:
-    drug = _find_drug(drug_name)
-    if not drug: 
-        return {"atpnQesitm" : "", "intrcQesitm" : ""}
-    return{
-        "atpnQesitm" : (drug.get("atpnQesitm") or "").strip(),
-        "intrcQesitm" : (drug.get("intrcQuesitm") or "").strip(),
-    }

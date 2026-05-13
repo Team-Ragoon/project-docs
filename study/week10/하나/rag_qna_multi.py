@@ -21,7 +21,7 @@ from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain
 from rag import (
     build_rag_chain, build_recommend_chain,build_summarize_chian,
-    build_cannot_recommend_chain, build_recommend_final_chain)
+    build_cannot_recommend_chain, build_recommend_final_chain,)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
@@ -30,7 +30,7 @@ load_dotenv()
 
 
 # 1. ChromaDB 로드
-CHROMA_PATH = "C:/Team-Raoon/project-docs/chroma_db"
+CHROMA_PATH = "C:/Team-Ragoon/project-docs/chroma_db"
 
 ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -173,6 +173,7 @@ class MedicalChatbot:
 
         print(f"[drug_names] {self.state.drug_names}")
 
+
         if self.state.query_type == "medication":
             try:
                 situation = self.situation_extractor.invoke({
@@ -197,11 +198,12 @@ class MedicalChatbot:
 
         # 증상만 입력 => 바로 약 추천
         if self.state.query_type == "symptom_only":
+            
             context = retriever_multi(user_input)
 
             response = self.rag_chain.invoke({
-                "context" : context,
-                "question": user_input,
+                    "context" : context,
+                    "question": user_input,
             })
             self.state.add_turn(user_input, response)
             return response
