@@ -35,7 +35,7 @@ def build_recommend_chain(llm: ChatOpenAI):
     return prompt | llm | StrOutputParser()
 
 
-def build_summarize_chian(llm: ChatOpenAI):
+def build_summarize_chain(llm: ChatOpenAI):
     # 역질문 후 사용자의 상황 요약하기
     prompt = ChatPromptTemplate.from_messages([
         ("system", SUMMARIZE_SYSTEM_PROMPT),

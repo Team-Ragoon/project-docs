@@ -20,7 +20,7 @@ from validator import SlotValidator
 from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain
 from rag import (
-    build_rag_chain, build_recommend_chain,build_summarize_chian,
+    build_rag_chain, build_recommend_chain,build_summarize_chain,
     build_cannot_recommend_chain, build_recommend_final_chain,)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
@@ -123,7 +123,7 @@ class MedicalChatbot:
         self.recommender = build_recommend_chain(llm= llm)
         self.recommend_final = build_recommend_final_chain(llm = llm)
         self.rag_chain = build_rag_chain(llm = llm)
-        self.summarizer = build_summarize_chian(llm = llm)
+        self.summarizer = build_summarize_chain(llm = llm)
         self.cannot_recommend = build_cannot_recommend_chain(llm = llm)
         self._pending_subject: str | None = None
         self._pending_question: str | None = None
