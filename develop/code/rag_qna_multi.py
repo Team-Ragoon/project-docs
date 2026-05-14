@@ -15,7 +15,7 @@ from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunct
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from system_prompt import EXPAND_SYSTEM_PROMPT
+from prompts.system_prompt import EXPAND_SYSTEM_PROMPT
 from validator import SlotValidator
 from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain

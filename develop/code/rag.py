@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from system_prompt import (
+from prompts.system_prompt import (
     SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, 
     SUMMARIZE_HUMAN_PROMPT, SUMMARIZE_SYSTEM_PROMPT,
     RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT,
