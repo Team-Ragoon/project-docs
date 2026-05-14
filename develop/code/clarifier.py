@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from system_prompt import CLARIFIER_SYSTEM_PROMPT
+from prompts.system_prompt import CLARIFIER_SYSTEM_PROMPT
 
 _PROMPT = ChatPromptTemplate.from_messages([
     ("system", CLARIFIER_SYSTEM_PROMPT),

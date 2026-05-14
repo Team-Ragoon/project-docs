@@ -25,24 +25,18 @@ def _find_drug(drug_name: str) -> dict | None:
 
 
 def get_drug_all_caution_texts(drug_name: str) -> dict[str, str]:
-    # atpnQesitm , intrcQesitm, atpnWarnQesitm 3개의 정보를 동시 반환
+    # atpnQesitm , intrcQesitm 2개의 정보를 동시 반환
+    # caution_parser.py에서 사용되어 역질문 list 생성.
     drug = _find_drug(drug_name)
     if not drug:
-        return {"atpnQesitm": "", "intrcQesitm": "", } #"atpnWarnQesitm": ""}
+        return {"atpnQesitm": "", "intrcQesitm": "", }
     return {
         "atpnQesitm" : (drug.get("atpnQesitm") or "").strip(),
         "intrcQesitm" : (drug.get("intrcQesitm") or "").strip(),
-        #"atpnWarnQesitm" : (drug.get("atpnWarnQesitm") or "").strip(),
     }
 
 @lru_cache(maxsize = 1)
 def list_drug_names() -> list[str]:
     # lru_cache 적용 -> 파일 중복 읽기 방지
+    # drug_detector.py에서 사용되며 약 이름 matching에 사용됨.
     return [item["itemName"] for item in _load_db()]
-
-def find_drugs_by_keyword(keyword: str) -> list[str]:
-    # 키워드를 포함하는 약 이름 전체 반환
-    return [
-        item["itemName"] for item in _load_db()
-        if keyword in item["itemName"]
-    ]

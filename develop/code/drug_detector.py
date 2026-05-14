@@ -5,6 +5,7 @@ import re
 FUZZY_THRESHOLD = 80
 MIN_TOKEN_LEN = 2 # 너무 짧은 토큰은 오탐 방지
 
+
 # 한국어 조사 목록
 JOSA = [
     "으로부터", "에서부터", "로부터",  # 긴 것 먼저 (순서 중요)
@@ -20,14 +21,15 @@ JOSA = [
     "도", "만", "의", "와", "과",
 ]
 
+# 단어 끝의 조사를 제거하는 함수
 def _remove_josa(word: str) -> str:
-    # 단어 끝의 조사 제거
     for josa in JOSA:
         if word.endswith(josa) and len(word) > len(josa):
             return word[: -len(josa)]
     return word
 
 
+# 문장을 단어 단위로 분리하여 원본 token + 조사 제거 token 모두 찾는 함수
 def _tokenize(text: str) -> list[str]:
     # 문장을 단어 단위로 분리
     raw_tokens = [w for w in re.split(r"[\s?.,!]", text) if len(w) >= MIN_TOKEN_LEN]
@@ -40,13 +42,14 @@ def _tokenize(text: str) -> list[str]:
     return [t for t in tokens if len(t) >= MIN_TOKEN_LEN]
 
 
+# text에서 DB에 적재되어 있는 약 이름 탐지하여 약 이름 전체를 찾는 함수.
+# DB에 적재되어 있는 약의 이름들 + 사용자가 입력한 keyword 반환.
 def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
-    # 텍스트에서 DB 약 이름 탐지. (약 이름 전체와 사용자 입력 키워드 반환)
     drug_names = list_drug_names()
     tokens = _tokenize(text)
 
     matched = []
-    user_keyword = None # 사용자가 입력한 약 키워드
+    user_keyword = None
 
     for name in drug_names:
         for token in tokens:
@@ -65,4 +68,5 @@ def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
                 if not user_keyword:
                     user_keyword = token
                 break
+    
     return matched, user_keyword

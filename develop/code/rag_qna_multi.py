@@ -6,8 +6,6 @@ RAG 기반 의약품 QnA 시스템 - Query Expansion 버전
 - 추가: Query Expansion (LLM으로 쿼리 자동 확장)
 """
 
-import os
-import shutil
 import json
 import chromadb
 from dotenv import load_dotenv
@@ -20,7 +18,7 @@ from validator import SlotValidator
 from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain
 from rag import (
-    build_rag_chain, build_recommend_chain,build_summarize_chain,
+    build_rag_chain,build_summarize_chain,
     build_cannot_recommend_chain, build_recommend_final_chain,)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
@@ -104,13 +102,15 @@ def retriever_multi(question: str, n_results: int = 5) -> str:
     sorted_docs = sorted(all_docs.values(), key=lambda x: x["dist"])[:5]
 
 
-    # 확인용
+    # 확인용 출력 코드--------------------------------------
     print(f"\n[검색된 문서 목록]")
     for i, d in enumerate(sorted_docs, 1):
         print(f"  {i}. 유사도: {d['dist']:.4f}")
         print(f"     약품명: {d['meta'].get('drug_name')}") 
+    #-------------------------------------------------------
 
     return "\n\n".join([d["doc"] for d in sorted_docs])
+
 
 # Chatbot class 선언
 class MedicalChatbot:
@@ -120,7 +120,6 @@ class MedicalChatbot:
         self.analyzer = build_analyzer_chain(llm = llm)
         self.situation_extractor = build_situation_extractor_chain(llm = llm)
         self.clarifier = build_clarifier_chain(llm = llm)
-        self.recommender = build_recommend_chain(llm= llm)
         self.recommend_final = build_recommend_final_chain(llm = llm)
         self.rag_chain = build_rag_chain(llm = llm)
         self.summarizer = build_summarize_chain(llm = llm)
@@ -129,39 +128,50 @@ class MedicalChatbot:
         self._pending_question: str | None = None
     
     def chat(self, user_input: str) -> str:
+
+        # 역질문 진행.
         if self._pending_subject:
+            # 역질문에 대한 사용자의 답변의 긍정/부정 여부를 판단. 
             is_positive = parse_yes_no(
                 user_input = user_input,
                 question = self._pending_question,
                 llm = llm
             )
+            # 긍정/부정 여부를 질문과 함께 저장한 후, 다음 질문을 위한 초기화.
             self.state.record_clarify_answer(self._pending_subject, is_positive)
             self._pending_subject = None
             self._pending_question = None
 
-            #── 확인용 출력 ──────────────────────────────────────
+
+            # 확인용 출력 -----------------------------------------
             print("\n[caution_slots 현재 상태]")
             for subject, value in self.state.caution_slots.items():
                 status = "해당" if value else "해당 없음" if value is False else "미응답"
                 print(f"  {subject}: {status}")
-            #────────────────────────────────────────────────────
+            #-------------------------------------------------------
 
-            # 저장 후 바로 다음 역질문 / 최종 답변으로 이동
+            # 다음 역질문 / 최종 답변으로 이동
             return self._next_clarify_or_answer(user_input)
         
+
+        # 새로운 query에 대한 응답을 위해 초기화 진행.
         self.state.start_new_turn()
         
-        # 후보 약 탐지 (복수 개)
+
+        # 사용자가 입력한 약의 이름과 matching되는 약들을 DB에서 찾기.
         matched_drugs, user_keyword = detect_drugs_in_text(user_input)
 
 
+        # 사용자의 입력 -> query의 종류 및 증상 판단.
         analysis = self.analyzer.invoke({
-            "history": self.state.get_history(), 
             "user_input" : user_input,
         })
 
+        # 확인용 출력 --------------------------------
         print(f"[analysis 전체] {analysis}")
+        #--------------------------------------------
 
+        # analyzer가 미리 탐지하지만 보완하는 역할. (잘못 판단한 경우를 대비)
         if matched_drugs:
             analysis["query_type"] = "medication"
             self.state.set_drug_candidates(matched_drugs, user_keyword)
@@ -171,9 +181,11 @@ class MedicalChatbot:
         # 상태 update
         self.state.update_from_analysis(analysis)
 
+        # 확인용 출력 -----------------------------------
         print(f"[drug_names] {self.state.drug_names}")
+        #------------------------------------------------
 
-
+        # query_type이 medication이라면, query에 사용자의 상황이 포함되어 있는지 확인.
         if self.state.query_type == "medication":
             try:
                 situation = self.situation_extractor.invoke({
@@ -183,8 +195,10 @@ class MedicalChatbot:
                 print(f" [상황 추출 실패] {e}")
                 situation = {}
             
+
+            # query에 사용자의 상황이 포함되어 있는 경우
+            # 사용자의 상황 중 약들의 금기 사항에 포함되어 있는지 먼저 확인. 
             if situation:
-                # 미리 추출한 금기 사항 가져오기
                 caution_subjects = [
                     c["subject"]
                     for c in self.validator.get_contraindications(self.state.drug_names)
@@ -192,13 +206,14 @@ class MedicalChatbot:
 
                 self.state.apply_extracted_situation(situation, caution_subjects)
 
+            # 확인용 출력-----------------------------------------
             print(f"[caution_slots] {self.state.caution_slots}")
             print(f"[extra_context] {self.state.extra_context}")
+            #-----------------------------------------------------
         
 
-        # 증상만 입력 => 바로 약 추천
+        # 흐름 A : 증상만 입력 -> 약 추천. (아직 필수 역질문 구현 X)
         if self.state.query_type == "symptom_only":
-            
             context = retriever_multi(user_input)
 
             response = self.rag_chain.invoke({
@@ -208,13 +223,15 @@ class MedicalChatbot:
             self.state.add_turn(user_input, response)
             return response
 
-        # 질문에 약이 포함되어 있음 => 주의사항 기반 역질문
+
+        # 흐름 B : 질문에 약 이름이 포함되어 있음 => 주의사항 기반 역질문
         if self.state.query_type == "medication":
             response = self._next_clarify_or_answer(user_input)
             self.state.add_turn(user_input, response)
             return response
 
         return "죄송해요, 상비약 구매에 관련된 질문에만 답변드릴 수 있어요."
+    
 
     def _next_clarify_or_answer(self, user_input: str) -> str:
         """
@@ -237,7 +254,6 @@ class MedicalChatbot:
                 "reason":       slot["reason"],
                 "question":     slot["question"],
             })
-            # 역질문 텍스트 + subject 저장
             self._pending_subject = slot["subject"]
             self._pending_question = response
             self.state.clarify_count += 1
@@ -247,16 +263,16 @@ class MedicalChatbot:
         return self._generate_final_answer()
 
 
+    # caution_slots을 자연어로 변환하는 함수.
     def _build_user_profile(self) -> str:
-        # caution_slots -> 자연어로 변환
         lines = []
         for subject, value in self.state.caution_slots.items():
             status = "해당" if value else "해당 없음"
             lines.append(f"-{subject} : {status}")
         return "\n".join(lines) if lines else "- 특이사항 없음"
     
+    # 사용자의 상황 중 금기 사항이 아닌 상황을 text로 변환.
     def _build_extra_context(self) -> str:
-        # 비금기 상황 text 변환
         if not self.state.extra_context:
             return ""
         lines = []
@@ -265,6 +281,7 @@ class MedicalChatbot:
             lines.append(f"- {subject} : {status}")
         return "\n".join(lines)
 
+    # 역질문 후 최종 답변 생성.(요약 -> 약 복용 가능 여부를 판단)
     def _generate_final_answer(self) -> str:
         drug_names =self.state.drug_names
         drug_keyword = self.state.drug_keyword
@@ -272,12 +289,14 @@ class MedicalChatbot:
         user_profile = self._build_user_profile()
         extra_context = self._build_extra_context()
 
+        # 최종 답변 전에 언급할 사용자의 현 상황 요약.
         summary = self.summarizer.invoke({
             "drug_name" : drug_keyword,
             "symptom" : self.state.symptom or "언급 없음",
             "user_profile" : user_profile,
         })
 
+        # 사용자가 해당 약을 복용할 수 있는지 판단.
         applicable = [
             f"- {c['subject']}: {c['reason']}"
             for c in all_contraindications
@@ -292,6 +311,7 @@ class MedicalChatbot:
                 "applicable_cautions" : "\n".join(applicable),
             })
         else:
+            # 복용 가능 -> 약 추천.
             answer = self.recommend_final.invoke({
                 "drug_keyword" : drug_keyword,
                 "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
