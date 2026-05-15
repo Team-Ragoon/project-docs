@@ -135,6 +135,7 @@ class MedicalChatbot:
             is_positive = parse_yes_no(
                 user_input = user_input,
                 question = self._pending_question,
+                subject = self._pending_subject,
                 llm = llm
             )
             # 긍정/부정 여부를 질문과 함께 저장한 후, 다음 질문을 위한 초기화.
@@ -206,6 +207,9 @@ class MedicalChatbot:
 
                 self.state.apply_extracted_situation(situation, caution_subjects)
 
+                #미리 채워진 슬롯 수만큼 clarify_count 차감
+                self.state.clarify_count += len(self.state.caution_slots)
+
             # 확인용 출력-----------------------------------------
             print(f"[caution_slots] {self.state.caution_slots}")
             print(f"[extra_context] {self.state.extra_context}")
@@ -243,10 +247,12 @@ class MedicalChatbot:
             self.state.drug_names,
             self.state.caution_slots,
             self.state.clarify_count,
+            self.state.extra_context,
         ):
             slot = self.validator.get_priority_slot(
                 self.state.drug_names,
                 self.state.caution_slots,
+                self.state.extra_context,
             )
             response = self.clarifier.invoke({
                 "filled_slots": self.state.caution_slots,

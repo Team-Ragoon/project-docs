@@ -1,4 +1,11 @@
+import re
 from langchain_core.messages import HumanMessage, AIMessage
+
+AGE_PATTERN = re.compile(
+    r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|영아|유아|젖먹이|신생아|영유아|어린이|^나이$"
+)
+
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
 
 class DialogueState:
     def __init__(self):
@@ -12,6 +19,14 @@ class DialogueState:
         self._history : list = []
 
     
+    def _normalize_subject(self, subject: str) -> str:
+        if AGE_PATTERN.search(subject):
+            return "나이"
+        elif PREG_PATTERN.search(subject):
+            return "임산부/수유부"
+        return subject
+    
+
     # 현재 코드 -> 새로운 query를 새로운 사용자로 인식. (모두 초기화해야 함.)
     def start_new_turn(self):
         self.query_type = None
@@ -42,20 +57,24 @@ class DialogueState:
     # 만약, 금기 목록에 존재 X -> extra_context에 저장하여 약 추천 시 고려.
     def apply_extracted_situation(self, situation: dict, caution_subjects: list[str]):
         for subject, value in situation.items():
-            if subject in caution_subjects: 
-                if subject not in self.caution_slots:
-                    self.caution_slots[subject] = value
-                    status = "해당" if value else "해당 없음"
+            normalized = self._normalize_subject(subject)
+            
+            # 나이가 숫자로 추출된 경우 10세 이하면 True, 초과면 False
+            if subject == "나이" and isinstance(value, (int, float)):
+                value = value <= 10
+            
+            if normalized in caution_subjects:
+                if normalized not in self.caution_slots:
+                    self.caution_slots[normalized] = value
             else:
                 if subject not in self.extra_context:
                     self.extra_context[subject] = value
-                    status = "해당" if value else "해당 없음"
 
 
     # 역질문에 대한 응답을 저장. 
     # (해당 함수 호출 전에 긍정/부정 응답 판단을 위한 함수인 parse_yes_no 호출한 상태 -> parse_yes_no가 반환한 bool 타입 값을 저장.)
     def record_clarify_answer(self, subject: str, is_positive: bool):
-        self.caution_slots[subject] = is_positive;
+        self.caution_slots[subject] = is_positive
     
 
     def get_history(self) -> list:
