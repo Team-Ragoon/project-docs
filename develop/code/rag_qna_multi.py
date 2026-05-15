@@ -19,7 +19,7 @@ from analyzer import build_analyzer_chain, build_situation_extractor_chain
 from clarifier import build_clarifier_chain
 from rag import (
     build_rag_chain,build_summarize_chain,
-    build_cannot_recommend_chain, build_recommend_final_chain,)
+    build_cannot_recommend_chain, build_recommend_final_chain)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
