@@ -56,12 +56,27 @@ class DialogueState:
     # 만약, 금기 목록에 존재 -> caution_slots에 저장.(나중에 역질문 skip)
     # 만약, 금기 목록에 존재 X -> extra_context에 저장하여 약 추천 시 고려.
     def apply_extracted_situation(self, situation: dict, caution_subjects: list[str]):
+        # 숫자 나이가 있는지 먼저 확인
+        has_numeric_age = any(
+            k == "나이" and isinstance(v, (int, float))
+            for k, v in situation.items()
+        )
+
+        print(f"[situation] {situation}")
         for subject, value in situation.items():
-            normalized = self._normalize_subject(subject)
-            
             # 나이가 숫자로 추출된 경우 10세 이하면 True, 초과면 False
             if subject == "나이" and isinstance(value, (int, float)):
-                value = value <= 10
+                self.extra_context["나이"] = float(value)
+                continue
+
+            normalized = self._normalize_subject(subject)
+
+            # "소아", "영유아" 등 나이 키워드인데 숫자 없이 True로 온 경우
+            # → caution_slots["나이"] = True로 저장 (기존 동작 유지)
+            if normalized == "나이" and isinstance(value, bool):
+                if "나이" not in self.caution_slots:
+                    self.caution_slots["나이"] = value
+                continue
             
             if normalized in caution_subjects:
                 if normalized not in self.caution_slots:

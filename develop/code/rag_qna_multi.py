@@ -149,6 +149,7 @@ class MedicalChatbot:
             for subject, value in self.state.caution_slots.items():
                 status = "해당" if value else "해당 없음" if value is False else "미응답"
                 print(f"  {subject}: {status}")
+            print("\n")
             #-------------------------------------------------------
 
             # 다음 역질문 / 최종 답변으로 이동
@@ -210,6 +211,14 @@ class MedicalChatbot:
                 #미리 채워진 슬롯 수만큼 clarify_count 차감
                 self.state.clarify_count += len(self.state.caution_slots)
 
+                # 나이 자동 처리분 추가 차감
+                _, auto_filled = self.validator.get_missing_slots(
+                    self.state.drug_names,
+                    self.state.caution_slots,
+                    self.state.extra_context,
+                )
+                self.state.clarify_count += auto_filled
+
             # 확인용 출력-----------------------------------------
             print(f"[caution_slots] {self.state.caution_slots}")
             print(f"[extra_context] {self.state.extra_context}")
@@ -243,6 +252,10 @@ class MedicalChatbot:
         모든 슬롯이 채워졌으면 최종 답변 생성
         역질문 응답 처리 후 / medication 진입 시 공통 호출
         """
+        # 사용자 query에 금기 사항에 해당하는 내용이 있다면 역질문 X => 바로 복용 불가 안내 진행.
+        if any(v is True for v in self.state.caution_slots.values()):
+            return self._generate_final_answer()
+
         if self.validator.should_clarify(
             self.state.drug_names,
             self.state.caution_slots,
@@ -309,6 +322,14 @@ class MedicalChatbot:
             if self.state.caution_slots.get(c["subject"]) is True
         ]
 
+        # 확인 안 된 slot (역질문 하지 않은 사항들)
+        unchecked = [
+            c["subject"]
+            for c in all_contraindications
+            if self.state.caution_slots.get(c["subject"]) is None
+            and not self.validator._should_skip(c["subject"], self.state.caution_slots, self.state.extra_context)
+        ]
+
         if applicable:
             # 복용 불가 -> 이유 설명
             answer = self.cannot_recommend.invoke({
@@ -324,6 +345,7 @@ class MedicalChatbot:
                 "user_profile" : user_profile,
                 "applicable_cautions": "특별한 금기사항 해당 없음",
                 "extra_context" : extra_context or "없음",
+                "unchecked_cautions": ", ".join(unchecked) if unchecked else "없음",
             }) 
 
         return f"{summary}\n\n{answer}"

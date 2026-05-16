@@ -18,17 +18,27 @@ CONTRAINDICATION_PATTERNS = [
 # 역질문 시 우선순위 판별 키워드 (숫자가 낮을수록 높은 우선순위)
 PRIORITY_RULES = [
     # 우선순위 1: 나이 (N세/개월 미만·이하)
-    (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)")),
+    (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|\b나이\b")),
     # 우선순위 2: 임부/임산부/수유부 (알코올보다 우선)
-    (2, re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")),
-    # 우선순위 2: 알코올
-    (2, re.compile(r"알코올|음주|술")),
-    # 우선순위 3: 불내성·결핍증·흡수장애 (아세트아미노펜 최대용량은 validator에서 삽입)
-    (3, re.compile(r"불내성|결핍증|흡수장애")),
-    # 우선순위 4: 간장애 (MAO 억제제보다 우선)
-    (4, re.compile(r"간장애")),
+    (2, re.compile(r"임부|임신 가능성|임산부|수유부|수유 중|임산부/수유부")),
+    # 우선순위 3: 알코올
+    (3, re.compile(r"알코올|음주|\b술\b")),
     # 우선순위 4: MAO 억제제
-    (4, re.compile(r"MAO\s*억제제|모노아민\s*산화효소")),
+    (4, re.compile(r"MAO\s*억제제|모노아민\s*산화효소|항우울제|항정신병")),    
+    # 우선순위 5: 불내성·결핍증·흡수장애 
+    (5, re.compile(r"불내성|결핍증|흡수장애")),
+    # 우선순위 6: 간장애
+    (6, re.compile(r"간장애")),
+    # 우선순위 7: 신장 관련
+    (7, re.compile(r"신장|신부전|신장애")),
+    # 우선순위 8: 심장/혈압 관련
+    (8, re.compile(r"심장|고혈압|혈압|심부전")),
+    # 우선순위 9: 위장 관련
+    (9, re.compile(r"위장|궤양|출혈")),
+    # 우선순위 10: 항암 관련
+    (10, re.compile(r"항암|메토트렉세이트")),
+    # 우선순위 11: 수술 관련
+    (11, re.compile(r"수술|우회로")),
 ]
 
 # 아세트아미노펜 최대 용량 슬롯 (validator에서 동적 삽입)
@@ -66,12 +76,22 @@ def _extract_contraindication_sentencese(text: str) -> list[str]:
     return list(dict.fromkeys(s.strip() for s in sentences))
 
 
-# 역질문의 우선순위(subject + reason 텍스트 기준으로 우선순위 숫자 반환)
+# 역질문의 우선순위
+# reason이 모호할 수 있으므로 subject만으로 먼저 판별
 def _get_priority(item: dict) -> int:
-    text = f"{item.get('subject', '')} {item.get('reason', '')}"
+    subject = item.get('subject', '')
+    for priority, pattern in PRIORITY_RULES:
+        if pattern.search(subject):
+            #print(f"[우선순위] '{subject}' → {priority}순위(패턴: {pattern.pattern})")
+            return priority
+    
+    # reason까지 포함해서 재시도
+    text = f"{subject}{item.get('reason', '')}"
     for priority, pattern in PRIORITY_RULES:
         if pattern.search(text):
             return priority
+    
+    #print(f"[우선순위] '{subject}' → 99순위")
     return 99  # 해당 없으면 맨 뒤
 
 
@@ -105,7 +125,11 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
         #combined_texts.append(texts["atpnWarnQesitm"])
     
     combined = "\n".join(t for t in combined_texts if t)
+    #print(f"[combined 길이] {len(combined)}자")
     sentences = _extract_contraindication_sentencese(combined)
+    # print(f"[추출된 금기 문장 수] {len(sentences)}개")
+    # print(f"[추출된 문장들]\n" + "\n".join(sentences))
+
 
     if not sentences:
         _cache[cache_key] = ()
