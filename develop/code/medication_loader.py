@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from functools import lru_cache
 
-DB_PATH = r"C:\Team-Ragoon\project-docs\study\week10\dataset\drug_data.json"
+DB_PATH = Path(__file__).parent.parent/"dataset"/"drug_data.json"
 
 @lru_cache(maxsize=1)
 def _load_db() -> list[dict]:
@@ -40,3 +40,16 @@ def list_drug_names() -> list[str]:
     # lru_cache 적용 -> 파일 중복 읽기 방지
     # drug_detector.py에서 사용되며 약 이름 matching에 사용됨.
     return [item["itemName"] for item in _load_db()]
+
+
+# 후보 약 중 아세트아미노펜 성분이 포함된 약이 있는지 확인하기 위한 함수.
+# 역질문 시 우선순위로 넣기 위해서 필요함.
+def has_acetaminophen(drug_names: list[str]) -> bool:
+    for drug_name in drug_names:
+        drug = _find_drug(drug_name)
+        if not drug:
+            continue
+        ingredient = (drug.get("ingredient_api") or "").lower()
+        if "아세트아미노펜" in ingredient:
+            return True
+    return False
