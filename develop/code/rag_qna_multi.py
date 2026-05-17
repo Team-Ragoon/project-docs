@@ -7,6 +7,7 @@ RAG 기반 의약품 QnA 시스템 - Query Expansion 버전
 """
 
 import json
+from pathlib import Path
 import chromadb
 from dotenv import load_dotenv
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
@@ -28,7 +29,9 @@ load_dotenv()
 
 
 # 1. ChromaDB 로드
-CHROMA_PATH = "C:/Team-Ragoon/project-docs/chroma_db"
+_DEVELOP_ROOT = Path(__file__).resolve().parent.parent
+CHROMA_PATH = str(_DEVELOP_ROOT / "chroma_db")
+_DRUG_DOCUMENTS_PATH = _DEVELOP_ROOT / "dataset" / "drug_documents.json"
 
 ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
 client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -45,7 +48,7 @@ else:
         embedding_function=ef,
         metadata={"hnsw:space": "cosine"}
     )
-    with open(r"C:\Team-Ragoon\project-docs\study\week10\dataset\drug_documents.json", "r", encoding="utf-8") as f:
+    with open(_DRUG_DOCUMENTS_PATH, "r", encoding="utf-8") as f:
         documents = json.load(f)
 
     collection.add(
