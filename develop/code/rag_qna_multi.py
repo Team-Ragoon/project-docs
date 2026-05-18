@@ -57,7 +57,7 @@ else:
 
 
 # 2. LLM 설정
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
 
 
 # 3. Query Expansion
@@ -74,6 +74,25 @@ def expand_query(question: str) -> list[str]:
     extra_queries = [q.strip() for q in expanded.strip().split("\n") if q.strip()]
     queries = [question] + extra_queries[:3]  # 원본 + 최대 3개
     return queries
+
+
+# 흐름 A 최종 추천 완료 감지 함수
+# LLM 응답에 "💊" 또는 "추천 약:"이 포함되면 역질문 종료로 간주
+def is_final_recommendation(response: str) -> bool:
+    return "💊" in response or "추천 약:" in response or "🚫" in response
+
+
+# 약 이름으로 ChromaDB에서 해당 약의 문서를 직접 가져오는 함수
+# 흐름 A 역질문 중 사용자가 약 이름을 언급하면 context에 추가하기 위해 사용
+def fetch_drug_documents(drug_names: list[str]) -> str:
+    if not drug_names:
+        return ""
+    try:
+        results = collection.get(where={"drug_name": {"$in": drug_names}})
+        return "\n\n".join(results["documents"]) if results["documents"] else ""
+    except Exception as e:
+        print(f"[fetch_drug_documents 오류] {e}")
+        return ""
 
 
 # 4. Multi-Query Retriever
@@ -129,7 +148,32 @@ class MedicalChatbot:
     
     def chat(self, user_input: str) -> str:
 
-        # 역질문 진행.
+        # 흐름 A 역질문 진행 중 (상태 플래그로 판단 — 패턴 매칭보다 안전)
+        # 검색 스킵 + 첫 턴에서 캐시된 context 재사용 + chat_history로 LLM이 다음 질문/최종 답변 생성
+        if self.state._in_flow_a_clarify:
+            history = self.state.get_history()
+
+            # 사용자가 새 약 이름을 언급했는지 탐지 -> 발견 시 context에 해당 약 문서 추가
+            # (예: "복용 중인 약?" → "판콜" → 판콜 문서를 context에 보강)
+            mentioned_drugs, _ = detect_drugs_in_text(user_input)
+            if mentioned_drugs:
+                extra_docs = fetch_drug_documents(mentioned_drugs)
+                if extra_docs:
+                    self.state._cached_context = self.state._cached_context + "\n\n" + extra_docs
+                    print(f"[context 보강] 추가된 약: {mentioned_drugs}")
+
+            response = self.rag_chain.invoke({
+                "context": self.state._cached_context,
+                "question": user_input,
+                "chat_history": history,
+            })
+            self.state.add_turn(user_input, response)
+            # 최종 추천이 나오면 흐름 A 종료
+            if is_final_recommendation(response):
+                self.state._in_flow_a_clarify = False
+            return response
+
+        # 흐름 B 역질문 진행.
         if self._pending_subject:
             # 역질문에 대한 사용자의 답변의 긍정/부정 여부를 판단. 
             is_positive = parse_yes_no(
@@ -173,7 +217,8 @@ class MedicalChatbot:
         #--------------------------------------------
 
         # analyzer가 미리 탐지하지만 보완하는 역할. (잘못 판단한 경우를 대비)
-        if matched_drugs:
+        # 단, analyzer가 "comparison"으로 판단한 경우는 덮어쓰지 않음 (비교 질문은 흐름 A에서 처리)
+        if matched_drugs and analysis.get("query_type") != "comparison":
             analysis["query_type"] = "medication"
             self.state.set_drug_candidates(matched_drugs, user_keyword)
         elif not analysis.get("query_type") and analysis.get("symptom"):
@@ -216,15 +261,25 @@ class MedicalChatbot:
             #-----------------------------------------------------
         
 
-        # 흐름 A : 증상만 입력 -> 약 추천. (아직 필수 역질문 구현 X)
-        if self.state.query_type == "symptom_only":
+        # 흐름 A : 증상만 입력 또는 비교 질문 -> 시스템 프롬프트 9번 역질문 규칙에 따라 LLM이 자율 진행
+        # 첫 턴이므로 chat_history는 빈 리스트. LLM이 필요한 정보 부족하면 역질문 생성.
+        # 검색한 context를 캐시 -> 역질문 턴에서도 재사용
+        # 플래그를 ON -> 이후 사용자 답변은 흐름 A 역질문 응답으로 처리
+        # 비교 질문은 SYSTEM_PROMPT 8번 규칙에 따라 역질문 없이 즉시 답변됨
+        if self.state.query_type in ("symptom_only", "comparison"):
             context = retriever_multi(user_input)
+            self.state._cached_context = context
+            self.state._in_flow_a_clarify = True
 
             response = self.rag_chain.invoke({
                     "context" : context,
                     "question": user_input,
+                    "chat_history": self.state.get_history(),
             })
             self.state.add_turn(user_input, response)
+            # 첫 턴에서 바로 최종 답변이 나온 경우 (정보가 충분했던 케이스)
+            if is_final_recommendation(response):
+                self.state._in_flow_a_clarify = False
             return response
 
 
