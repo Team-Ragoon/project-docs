@@ -114,3 +114,12 @@ code/
 ├── validator.py
 └── build_documents.py
 ```
+
+## 리엑트 실행
+```cd develop/code
+pip install -r requirements-api.txt
+python api_server.py
+```
+
+- 브라우저 내에서 http://localhost:8000/api/health 열고 ok 가 나오면 API on.
+- cd develop/front로 이동해 npm start 진행해주세요.
