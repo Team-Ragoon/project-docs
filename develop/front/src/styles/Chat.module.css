@@ -150,10 +150,12 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 0.5;
   }
+
   50% {
     opacity: 1;
   }
@@ -194,12 +196,31 @@
 }
 
 .exampleList li {
-  padding: 10px 14px;
   margin-bottom: 8px;
+}
+
+.exampleButton {
+  width: 100%;
+  padding: 10px 14px;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   font-size: 0.9rem;
+  font-family: inherit;
+  text-align: left;
+  color: #334155;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.exampleButton:hover:not(:disabled) {
+  border-color: #0d9488;
+  background: #f0fdfa;
+}
+
+.exampleButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .errorBanner {

@@ -8,13 +8,21 @@ interface MessageListProps {
   messages: ChatMessage[];
   loading: boolean;
   bottomRef: React.RefObject<HTMLDivElement>;
+  onExampleClick: (example: string) => void;
+  examplesDisabled?: boolean;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, loading, bottomRef }) => {
+const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  loading,
+  bottomRef,
+  onExampleClick,
+  examplesDisabled,
+}) => {
   return (
     <div className={styles.messageList}>
       {messages.length === 0 && !loading ? (
-        <EmptyState />
+        <EmptyState onExampleClick={onExampleClick} disabled={examplesDisabled} />
       ) : (
         messages.map((message) => <MessageItem key={message.id} message={message} />)
       )}

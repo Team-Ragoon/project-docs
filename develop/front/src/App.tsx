@@ -26,6 +26,8 @@ const App: React.FC = () => {
         loading={loading}
         error={error}
         bottomRef={bottomRef}
+        onExampleClick={sendMessage}
+        examplesDisabled={loading || apiOnline === false}
       />
       <ChatInput
         onSend={sendMessage}

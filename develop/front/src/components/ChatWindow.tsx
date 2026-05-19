@@ -8,13 +8,28 @@ interface ChatWindowProps {
   loading: boolean;
   error: string | null;
   bottomRef: React.RefObject<HTMLDivElement>;
+  onExampleClick: (example: string) => void;
+  examplesDisabled?: boolean;
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ messages, loading, error, bottomRef }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({
+  messages,
+  loading,
+  error,
+  bottomRef,
+  onExampleClick,
+  examplesDisabled,
+}) => {
   return (
     <main className={styles.chatWindow}>
       {error && <div className={styles.errorBanner}>{error}</div>}
-      <MessageList messages={messages} loading={loading} bottomRef={bottomRef} />
+      <MessageList
+        messages={messages}
+        loading={loading}
+        bottomRef={bottomRef}
+        onExampleClick={onExampleClick}
+        examplesDisabled={examplesDisabled}
+      />
     </main>
   );
 };

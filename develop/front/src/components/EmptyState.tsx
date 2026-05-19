@@ -7,17 +7,31 @@ const EXAMPLES = [
   '두통에 타이레놀 먹어도 될까요?',
 ];
 
-const EmptyState: React.FC = () => {
+interface EmptyStateProps {
+  onExampleClick: (example: string) => void;
+  disabled?: boolean;
+}
+
+const EmptyState: React.FC<EmptyStateProps> = ({ onExampleClick, disabled }) => {
   return (
     <div className={styles.emptyState}>
       <h2 className={styles.emptyTitle}>질문을 입력해 주세요</h2>
       <p className={styles.emptyDesc}>
         <code>rag_qna_multi.py</code>의 직접 입력 모드와 같이, 증상만 말하거나 약 이름을
-        포함해 질문할 수 있습니다. 역질문이 나오면 예/아니오로 답해 주세요.
+        포함해 질문할 수 있습니다. <br />역질문이 나오면 예/아니오로 답해 주세요.
       </p>
       <ul className={styles.exampleList}>
         {EXAMPLES.map((example) => (
-          <li key={example}>{example}</li>
+          <li key={example}>
+            <button
+              type="button"
+              className={styles.exampleButton}
+              onClick={() => onExampleClick(example)}
+              disabled={disabled}
+            >
+              {example}
+            </button>
+          </li>
         ))}
       </ul>
     </div>
