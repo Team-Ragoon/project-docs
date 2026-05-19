@@ -21,13 +21,15 @@ JOSA = [
     "도", "만", "의", "와", "과",
 ]
 
-
-# 약 이름 substring에 포함되어 오탐을 일으키는 일반 한국어 단어
-# 예: "아이" → "판콜아이콜드시럽"으로 잘못 매칭됨
 STOPWORDS = {
+    # 인물
     "아이", "어른", "성인", "어린이", "소아", "아기", "아저씨", "아주머니",
+    "엄마", "아빠", "나", "우리", "사람", "여자", "남자",
+    # 시간/장소
     "오늘", "어제", "내일", "방금", "지금", "여기", "거기",
+    # 증상
     "감기", "두통", "복통", "비염", "알러지", "알레르기", "두드러기",
+    # 지시어
     "그게", "그건", "이게", "이건", "근데", "약은", "약이",
 }
 
@@ -61,14 +63,16 @@ def _tokenize(text: str) -> list[str]:
 def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
     drug_names = list_drug_names()
     tokens = _tokenize(text)
+    #print(f"[토큰 목록] {tokens}")
 
     matched = []
     user_keyword = None
 
     for name in drug_names:
         for token in tokens:
-            # 1차: 약 이름이 토큰으로 시작 (prefix 매칭)
-            if name.startswith(token):
+            # 1차: 토큰이 약 이름에 포함
+            if token in name:
+                #print(f"[포함 매칭] token='{token}' → '{name}'")
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
@@ -77,6 +81,7 @@ def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
 
             # 2차: Fuzzy 매칭 (길이 3 이상 토큰만)
             if len(token) >= 3 and fuzz.ratio(token, name) >= FUZZY_THRESHOLD:
+                #print(f"[퍼지 매칭] token='{token}' → '{name}', score={fuzz.ratio(token, name)}")
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
