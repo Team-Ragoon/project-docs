@@ -24,6 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
+from medication_loader import get_drug_info
 
 load_dotenv()
 
@@ -299,9 +300,124 @@ class MedicalChatbot:
             return ""
         lines = []
         for subject, value in self.state.extra_context.items():
-            status = "해당" if value else "해당 없음"
-            lines.append(f"- {subject} : {status}")
+            if subject == "소아여부" and value is True:
+                lines.append("- 어린이/소아 복용 예정")  # LLM이 이해하기 쉽게
+            elif subject == "나이" and isinstance(value, float):
+                lines.append(f"- 나이: {value}세")
+            else:
+                status = "해당" if value else "해당 없음"
+                lines.append(f"- {subject}: {status}")
         return "\n".join(lines)
+    
+    # 어린이 / 소아로 확인된 경우 키즈/어린이 제형만 반환. / 없으면 전체 반환.
+    def _filter_candidates_by_age(self) -> list[str]:
+        context = self.state.caution_slots
+        extra = self.state.extra_context
+        
+        user_age = extra.get("나이")
+        is_child = (
+            (user_age is not None and float(user_age) <= 10)
+            or context.get("나이") is True
+            or extra.get("소아여부") is True
+        )
+        
+        if not is_child:
+            return self.state.drug_names
+        
+        # 키즈/소아 제형 필터링
+        KIDS_KEYWORDS = ["키즈", "소아", "아동", "어린이"]
+        kids_drugs = [
+            d for d in self.state.drug_names
+            if any(k in d for k in KIDS_KEYWORDS)
+        ]
+        
+        # 키즈 제형이 있으면 키즈만, 없으면 전체 반환
+        return kids_drugs if kids_drugs else self.state.drug_names
+
+    # 약별 성분 및 금기 정보 요약
+    def _build_drug_profiles_for(self, drug_names: list[str]) -> str:
+        lines = []
+        for name in self.state.drug_names:
+            drug = get_drug_info(name)
+            if not drug:
+                continue
+            ingredient = (drug.get("ingredient_api") or "성분 정보 없음").strip()
+            efficacy = (drug.get("efcyQesitm") or "정보 없음").strip()[:200]
+            # 금기 문장만 간략히 포함
+            lines.append(
+                f"- {name}\n"
+                f"성분: {ingredient}\n"
+                f"효능·효과: {efficacy}"
+                )
+        return "\n".join(lines) if lines else "없음"
+    
+    # 1개 추천 조건 코드로 판별. (LLM 판단만으로 부족함.)
+    def _should_recommend_single(self) -> bool:
+    
+        # 1. 후보 약 자체가 1개
+        if len(self.state.drug_names) == 1:
+            return True
+        
+        # 2. 금기 배제 후 남는 약이 1개
+        applicable_subjects = {
+            subject
+            for subject, value in self.state.caution_slots.items()
+            if value is True
+        }
+        if applicable_subjects:
+            remaining = self._get_remaining_candidates(applicable_subjects)
+            if len(remaining) == 1:
+                return True
+            if len(remaining) == 0:
+                # 아예 추천 가능한 약이 없는 경우.
+                # 원래 cannot_recommend로 가야 하지만, 여기에선 False 반환.
+                return False 
+        
+        # 3. 증상이 후보 약 중 1개에만 명시된 경우
+        if self._symptom_matches_only_one():
+            return True
+        
+        return False  # 나머지는 모두 2~3개 추천
+
+    # 금기 배제 후 남은 후보 약 목록
+    def _get_remaining_candidates(self, applicable_subjects: set) -> list[str]:
+        from medication_loader import get_drug_all_caution_texts
+        remaining = []
+        for name in self.state.drug_names:
+            texts = get_drug_all_caution_texts(name)
+            combined = texts["atpnQesitm"] + texts["intrcQesitm"]
+            # 해당 약에 금기 subject가 언급되면 제외
+            excluded = any(subject in combined for subject in applicable_subjects)
+            if not excluded:
+                remaining.append(name)
+        return remaining
+
+    # 증상이 후보 약 중 오직 1개의 효능에만 포함되는지 확인.
+    def _symptom_matches_only_one(self) -> bool:
+        symptoms = [s.strip() for s in (self.state.symptom or "").split(",") if s.strip()]
+        
+        if not symptoms:
+            return False
+
+        efficacy_map = {}
+        for name in self.state.drug_names:
+            drug = get_drug_info(name)
+            if not drug:
+                continue
+            efficacy_map[name] = (drug.get("efcyQesitm") or "")
+
+        # 증상별로 몇 개 약에 포함되는지 확인
+        for symptom in symptoms:
+            matched = [
+                name for name, efficacy in efficacy_map.items()
+                if symptom in efficacy
+            ]
+            # 이 증상이 오직 1개 약에만 있으면 → 1개 추천
+            if len(matched) == 1:
+                return True
+
+        return False
+
 
     # 역질문 후 최종 답변 생성.(요약 -> 약 복용 가능 여부를 판단)
     def _generate_final_answer(self) -> str:
@@ -333,6 +449,7 @@ class MedicalChatbot:
             and not self.validator._should_skip(c["subject"], self.state.caution_slots, self.state.extra_context)
         ]
 
+
         if applicable:
             # 복용 불가 -> 이유 설명
             answer = self.cannot_recommend.invoke({
@@ -341,14 +458,28 @@ class MedicalChatbot:
                 "applicable_cautions" : "\n".join(applicable),
             })
         else:
-            # 복용 가능 -> 약 추천.
+            # 연령 기반 후보 필터링
+            filtered_names = self._filter_candidates_by_age()
+
+            # 필터링된 후보로 1개 추천 여부 판별
+            original_names = self.state.drug_names
+            self.state.drug_names = filtered_names  # 임시 교체
+            recommend_single = self._should_recommend_single()
+            recommend_count = "1개" if recommend_single else "2~3개"
+            self.state.drug_names = original_names  # 복구
+
+            drug_profiles = self._build_drug_profiles_for(filtered_names)
+
             answer = self.recommend_final.invoke({
                 "drug_keyword" : drug_keyword,
+                "symptom" : self.state.symptom or "언급 없음",
                 "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
+                "drug_profiles" : drug_profiles, 
                 "user_profile" : user_profile,
                 "applicable_cautions": "특별한 금기사항 해당 없음",
                 "extra_context" : extra_context or "없음",
                 "unchecked_cautions": ", ".join(unchecked) if unchecked else "없음",
+                "recommend_count" : recommend_count,
             }) 
 
         return f"{summary}\n\n{answer}"

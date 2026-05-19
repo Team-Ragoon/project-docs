@@ -53,3 +53,6 @@ def has_acetaminophen(drug_names: list[str]) -> bool:
         if "아세트아미노펜" in ingredient:
             return True
     return False
+
+def get_drug_info(drug_name: str) -> dict | None:
+    return _find_drug(drug_name) 

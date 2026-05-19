@@ -50,7 +50,10 @@ class SlotValidator:
 
 
      # 나이 슬롯이 True로 채워졌거나, extra_context 나이가 기준 미만인 경우
-        age_positive = filled.get("나이") is True
+        age_positive = (filled.get("나이") is True
+                        or (user_age is not None and user_age <= 10)
+                        or extra_context.get("소아여부") is True)
+        
         if not age_positive and user_age is not None and is_preg_subject:
             # 임산부/수유부 스킵 여부: 나이가 10세 이하면 스킵
             age_positive = user_age <= 10       
@@ -123,6 +126,11 @@ class SlotValidator:
                     filled["나이"] = user_age < threshold
                     auto_filled += 1
                 continue  # 역질문 안 함
+
+            #user_age는 없지만 소아 여부가 있는 경우 -> 역질문 포함
+            if subject == "나이" and extra_context.get("소아여부") is True:
+                result.append(c)
+                continue
 
             result.append(c)
         return result, auto_filled

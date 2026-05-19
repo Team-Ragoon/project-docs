@@ -72,10 +72,9 @@ class DialogueState:
             normalized = self._normalize_subject(subject)
 
             # "소아", "영유아" 등 나이 키워드인데 숫자 없이 True로 온 경우
-            # → caution_slots["나이"] = True로 저장 (기존 동작 유지)
             if normalized == "나이" and isinstance(value, bool):
-                if "나이" not in self.caution_slots:
-                    self.caution_slots["나이"] = value
+                if not has_numeric_age:
+                    self.extra_context["소아여부"] = value
                 continue
             
             if normalized in caution_subjects:

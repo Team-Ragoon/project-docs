@@ -22,7 +22,7 @@ JOSA = [
 ]
 
 # 일반 단어 블랙리스트 - 약 이름이 아닌 일반 단어
-COMMON_WORDS = {"아이", "어른", "아기", "엄마", "아빠", "나", "우리", "사람", "여자", "남자"}
+COMMON_WORDS = {"아이", "어른", "아기", "엄마", "아빠", "나", "우리", "사람", "여자", "남자", "어린이"}
 
 # 단어 끝의 조사를 제거하는 함수
 def _remove_josa(word: str) -> str:
@@ -57,24 +57,25 @@ def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
 
     for name in drug_names:
         for token in tokens:
-            if token in COMMON_WORDS:
+            cleaned = _remove_josa(token)
+            if cleaned in COMMON_WORDS or token in COMMON_WORDS:
                 continue
             # 1차: 토큰이 약 이름에 포함
-            if token in name:
+            if cleaned in name or token in name:
                 #print(f"[포함 매칭] token='{token}' → '{name}'")
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
-                    user_keyword = token
+                    user_keyword = cleaned # 조사 제거된 버전으로 저장.
                 break
             
             #2차: Fuzzy 매칭
-            if fuzz.ratio(token, name) >= FUZZY_THRESHOLD:
+            if fuzz.ratio(cleaned, name) >= FUZZY_THRESHOLD:
                 #print(f"[퍼지 매칭] token='{token}' → '{name}', score={fuzz.ratio(token, name)}")
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
-                    user_keyword = token
+                    user_keyword = cleaned
                 break
     
     return matched, user_keyword
