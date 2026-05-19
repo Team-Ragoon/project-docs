@@ -30,9 +30,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, pendingSubject 
 
   return (
     <div className={styles.chatInput}>
-      {pendingSubject && (
-        <p className={styles.clarifyHint}>역질문: {pendingSubject}</p>
-      )}
       <div className={styles.inputRow}>
         <textarea
           className={styles.inputField}
@@ -41,7 +38,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, pendingSubject 
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          rows={2}
+          rows={1}
         />
         <button
           type="button"
