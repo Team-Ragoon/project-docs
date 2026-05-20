@@ -17,6 +17,8 @@ class DialogueState:
         self.extra_context: dict = {}  # query에서 금기 사항에 해당하지는 않지만 사용자의 증상에 해당하는 text
         self.clarify_count : int = 0 # 역질문 횟수
         self._history : list = []
+        self._cached_context : str = "" # 흐름 A 첫 턴의 retrieval 결과를 역질문 중에 재사용
+        self._in_flow_a_clarify : bool = False # 흐름 A 역질문 진행 중 여부 (패턴 매칭보다 안전)
 
     
     def _normalize_subject(self, subject: str) -> str:
@@ -28,6 +30,8 @@ class DialogueState:
     
 
     # 현재 코드 -> 새로운 query를 새로운 사용자로 인식. (모두 초기화해야 함.)
+    # 흐름 A 역질문 진행 중에는 호출되지 않음 (is_followup_response가 먼저 가로챔)
+    # 새 질문이 들어오면 chat_history도 초기화 (이전 토픽이 새 추천에 영향 주지 않도록)
     def start_new_turn(self):
         self.query_type = None
         self.symptom = None
@@ -36,6 +40,9 @@ class DialogueState:
         self.caution_slots = {}
         self.extra_context = {}
         self.clarify_count = 0
+        self._history = []
+        self._cached_context = ""
+        self._in_flow_a_clarify = False
     
     
     # query에 대한 분석 후에 갱신을 위한 함수.
