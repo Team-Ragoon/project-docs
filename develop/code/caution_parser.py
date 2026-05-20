@@ -52,18 +52,28 @@ AGE_PATTERN = re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|
 
 PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
 
+LACTOSE_PATTERN = re.compile(r"갈락토오스\s*불내성|유당\s*분해효소\s*결핍|젖당\s*분해효소\s*결핍|포도당.갈락토오스\s*흡수장애|유당불내증|젖당불내증")
+
+
 PREG_MERGED_SLOT = {
     "subject": "임산부/수유부",
     "question": "혹시 임산부이시거나 수유 중이신가요?",
     "reason": "태아 또는 모유를 통해 아기에게 영향을 줄 수 있음",
 }
 
+LACTOSE_MERGED_SLOT = {
+    "subject": "유당불내증",
+    "question": "혹시 유당불내증(우유나 유제품을 먹으면 복통·설사가 생기는 경우)이 있으신가요?",
+    "reason": "유당(젖당) 관련 유전적 문제가 있는 환자는 복용이 금지됩니다.",
+}
 
 def _normalize_subject(subject: str, item: dict) -> tuple[str, dict]:
     if AGE_PATTERN.search(subject):
         return "나이", item
     elif PREG_PATTERN.search(subject):
         return "임산부/수유부", {**item, **PREG_MERGED_SLOT}
+    elif LACTOSE_PATTERN.search(subject):
+        return "유당불내증", {**item, **LACTOSE_MERGED_SLOT}
     return subject, item
 
 
