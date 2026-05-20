@@ -62,6 +62,18 @@ else:
 # 2. LLM 설정
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
+SAFETY_SLOTS = [
+{
+"subject":  "임산부/수유부",
+"question": "혹시 임산부이시거나 수유 중이신가요?",
+"reason":   "임산부/수유부에게 복용 금지인 약이 있을 수 있어요",
+},
+{
+"subject":  "나이",
+"question": "혹시 12세 미만 소아가 복용할 예정인가요?",
+"reason":   "소아에게 복용 금지인 약이 있을 수 있어요",
+},
+]
 
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
@@ -228,10 +240,20 @@ class MedicalChatbot:
             #-----------------------------------------------------
         
 
-        # 흐름 A : 증상만 입력 -> 약 추천. (아직 필수 역질문 구현 X)
+        # 흐름 A : 증상만 입력 -> 안전 역질문 후 약 추천
         if self.state.query_type == "symptom_only":
-            context = retriever_multi(user_input)
+            # 안전 슬롯 중 아직 확인 안 된 게 있으면 역질문 먼저 진행
+            for slot in SAFETY_SLOTS:
+                if self.state.caution_slots.get(slot["subject"]) is None:
+                    response = slot["question"]
+                    self._pending_subject  = slot["subject"]
+                    self._pending_question = slot["question"]
+                    self.state.clarify_count += 1
+                    self.state.add_turn(user_input, response)
+                    return response
 
+            # 안전 슬롯 모두 확인 완료 → RAG 검색 → 추천
+            context = retriever_multi(user_input)
             response = self.rag_chain.invoke({
                     "context" : context,
                     "question": user_input,
