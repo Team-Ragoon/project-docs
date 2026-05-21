@@ -19,24 +19,44 @@ PILL_INFO_URL = "https://apis.data.go.kr/1471000/MdcinGrnIdntfcInfoService03/get
 INGREDIENT_URL = "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtMcpnDtlInq07"
 
 drug_names = [
-    # 소화제
-    "까스활명수", "베나치오", "베아제", "훼스탈",
-
-    # 숙취해소제
-    "디오니스액", "컨디션", "반하사심탕", "취어스액",
-
-    # 알러지약
-    "세노바퀵연질캡슐", "세티리진", "지르텍", "클리어딘",
+    # 진통제/해열제
+    "타이레놀", "탁센", "이지엔6이브", "게보린", "뉴베인", "부루펜",
 
     # 종합감기약
-    "콜대원", "모드콜에스", "판콜",
-
+    "판콜", "판피린", "콜대원", "모드콜에스", "타이레놀콜드", "테라플루", "챔프",
+    
+    # 인후염약
+    "스트렙실",
+    
     # 복통약
     "장엔폴", "동성정로환", "타라부틴",
-
-    # 진통제
-    "타이레놀", "게보린", "이지엔6이브", "이브", "부루펜",
+    
+    # 소화제
+    "까스활명수", "베나치오", "겔포스", "베아제", "훼스탈",
+    
+    # 변비약
+    "둘코락스", "메이킨큐",
+    
+    # 알러지약
+    "지르텍", "알러샷", "챔프알러논", "코메키나", "세노바퀵연질캡슐", "세티리진", "클리어딘",
+    
+    # 잇몸약 
+    "이가탄", 
+    
+    # 피임약
+    "머시론",
+    
+    # 비타민제 (의약품 등록된 것만)
+    "아로나민골드", "텐텐츄정", "벤포벨", "비맥스", "투엑스비", "마그비", "마그라민",
+    
+    # 관절약
+    "맥스콘드로이틴",
+    
+    # 금연보조제
+    "니코레트",
 ]
+
+
 
 # 약품명에서 제형 추출 (낱알식별 DB에 없는 액상/연고류)
 def extract_form_from_name(item_name):
@@ -175,9 +195,9 @@ for item in results:
 print(f"\n중복 제거: {len(results)}개 → {len(unique_results)}개")
 
 # JSON 파일로 저장
-with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json", "w", encoding="utf-8") as f:
+with open("C:/Team-Ragoon/project-docs/develop/dataset/drug_data.json", "w", encoding="utf-8") as f:
     json.dump(unique_results, f, ensure_ascii=False, indent=2)
 
-print(f"총 {len(unique_results)}개 저장 완료 → C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json")
+print(f"총 {len(unique_results)}개 저장 완료 → C:/Team-Ragoon/project-docs/develop/dataset/drug_data.json")
 
-print(f"\n총 {len(results)}개 저장 완료 → C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json")
+print(f"\n총 {len(results)}개 저장 완료 → C:/Team-Ragoon/project-docs/develop/dataset/drug_data.json")
