@@ -61,8 +61,20 @@ else:
 
 
 # 2. LLM 설정
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
 
+SAFETY_SLOTS = [
+{
+"subject":  "임산부/수유부",
+"question": "혹시 임산부이시거나 수유 중이신가요?",
+"reason":   "임산부/수유부에게 복용 금지인 약이 있을 수 있어요",
+},
+{
+"subject":  "나이",
+"question": "혹시 12세 미만 소아가 복용할 예정인가요?",
+"reason":   "소아에게 복용 금지인 약이 있을 수 있어요",
+},
+]
 
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
@@ -78,6 +90,25 @@ def expand_query(question: str) -> list[str]:
     extra_queries = [q.strip() for q in expanded.strip().split("\n") if q.strip()]
     queries = [question] + extra_queries[:3]  # 원본 + 최대 3개
     return queries
+
+
+# 흐름 A 최종 추천 완료 감지 함수
+# LLM 응답에 "💊" 또는 "추천 약:"이 포함되면 역질문 종료로 간주
+def is_final_recommendation(response: str) -> bool:
+    return "💊" in response or "추천 약:" in response or "🚫" in response
+
+
+# 약 이름으로 ChromaDB에서 해당 약의 문서를 직접 가져오는 함수
+# 흐름 A 역질문 중 사용자가 약 이름을 언급하면 context에 추가하기 위해 사용
+def fetch_drug_documents(drug_names: list[str]) -> str:
+    if not drug_names:
+        return ""
+    try:
+        results = collection.get(where={"drug_name": {"$in": drug_names}})
+        return "\n\n".join(results["documents"]) if results["documents"] else ""
+    except Exception as e:
+        print(f"[fetch_drug_documents 오류] {e}")
+        return ""
 
 
 # 4. Multi-Query Retriever
@@ -133,7 +164,32 @@ class MedicalChatbot:
     
     def chat(self, user_input: str) -> str:
 
-        # 역질문 진행.
+        # 흐름 A 역질문 진행 중 (상태 플래그로 판단 — 패턴 매칭보다 안전)
+        # 검색 스킵 + 첫 턴에서 캐시된 context 재사용 + chat_history로 LLM이 다음 질문/최종 답변 생성
+        if self.state._in_flow_a_clarify:
+            history = self.state.get_history()
+
+            # 사용자가 새 약 이름을 언급했는지 탐지 -> 발견 시 context에 해당 약 문서 추가
+            # (예: "복용 중인 약?" → "판콜" → 판콜 문서를 context에 보강)
+            mentioned_drugs, _ = detect_drugs_in_text(user_input)
+            if mentioned_drugs:
+                extra_docs = fetch_drug_documents(mentioned_drugs)
+                if extra_docs:
+                    self.state._cached_context = self.state._cached_context + "\n\n" + extra_docs
+                    print(f"[context 보강] 추가된 약: {mentioned_drugs}")
+
+            response = self.rag_chain.invoke({
+                "context": self.state._cached_context,
+                "question": user_input,
+                "chat_history": history,
+            })
+            self.state.add_turn(user_input, response)
+            # 최종 추천이 나오면 흐름 A 종료
+            if is_final_recommendation(response):
+                self.state._in_flow_a_clarify = False
+            return response
+
+        # 흐름 B 역질문 진행.
         if self._pending_subject:
             # 역질문에 대한 사용자의 답변의 긍정/부정 여부를 판단. 
             is_positive = parse_yes_no(
@@ -178,7 +234,8 @@ class MedicalChatbot:
         #--------------------------------------------
 
         # analyzer가 미리 탐지하지만 보완하는 역할. (잘못 판단한 경우를 대비)
-        if matched_drugs:
+        # 단, analyzer가 "comparison"으로 판단한 경우는 덮어쓰지 않음 (비교 질문은 흐름 A에서 처리)
+        if matched_drugs and analysis.get("query_type") != "comparison":
             analysis["query_type"] = "medication"
             self.state.set_drug_candidates(matched_drugs, user_keyword)
         elif not analysis.get("query_type") and analysis.get("symptom"):
@@ -229,15 +286,25 @@ class MedicalChatbot:
             #-----------------------------------------------------
         
 
-        # 흐름 A : 증상만 입력 -> 약 추천. (아직 필수 역질문 구현 X)
-        if self.state.query_type == "symptom_only":
+        # 흐름 A : 증상만 입력 또는 비교 질문 -> 시스템 프롬프트 9번 역질문 규칙에 따라 LLM이 자율 진행
+        # 첫 턴이므로 chat_history는 빈 리스트. LLM이 필요한 정보 부족하면 역질문 생성.
+        # 검색한 context를 캐시 -> 역질문 턴에서도 재사용
+        # 플래그를 ON -> 이후 사용자 답변은 흐름 A 역질문 응답으로 처리
+        # 비교 질문은 SYSTEM_PROMPT 8번 규칙에 따라 역질문 없이 즉시 답변됨
+        if self.state.query_type in ("symptom_only", "comparison"):
             context = retriever_multi(user_input)
+            self.state._cached_context = context
+            self.state._in_flow_a_clarify = True
 
             response = self.rag_chain.invoke({
                     "context" : context,
                     "question": user_input,
+                    "chat_history": self.state.get_history(),
             })
             self.state.add_turn(user_input, response)
+            # 첫 턴에서 바로 최종 답변이 나온 경우 (정보가 충분했던 케이스)
+            if is_final_recommendation(response):
+                self.state._in_flow_a_clarify = False
             return response
 
 
@@ -572,6 +639,130 @@ def run_interactive():
         response = bot.chat(user_input)
         print(f"🤖 챗봇: {response}")
 
+SCENARIOS = [
+    # ── 소화제 / 흐름 A (증상만) ──────────────────────────
+    {
+        "name": "[소화제/흐름A] 소화불량 증상만 - 성인",
+        "first_input": "밥 먹고 나서 속이 더부룩하고 소화가 안 돼",
+        "answers": {
+            "나이":         "30살",
+            "임산부/수유부": "아니요",
+        },
+    },
+    {
+        "name": "[소화제/흐름A] 소화불량 - 5세 어린이",
+        "first_input": "밥 먹고 나서 속이 더부룩하고 소화가 안 돼",
+        "answers": {
+            "나이": "5살",
+        },
+    },
+    {
+        "name": "[소화제/흐름A] 소화불량 - 2개월 영아 (병원 안내 기대)",
+        "first_input": "밥 먹고 나서 속이 더부룩하고 소화가 안 돼",
+        "answers": {
+            "나이": "2개월",
+        },
+    },
+    {
+        "name": "[소화제/흐름A] 과식·체함 - 성인",
+        "first_input": "과식해서 속이 너무 답답하고 체한 것 같아",
+        "answers": {
+            "나이":         "30살",
+            "임산부/수유부": "아니요",
+        },
+    },
+
+    # ── 소화제 / 흐름 B (약 이름 포함) ───────────────────
+    {
+        "name": "[소화제/흐름B] 훼스탈 - 성인 복용 가능",
+        "first_input": "훼스탈 먹어도 될까?",
+        "answers": {
+            "나이":         "아니요",
+            "임산부/수유부": "아니요",
+        },
+    },
+    {
+        "name": "[소화제/흐름B] 훼스탈 - 7살 아이 (만 7세 이하 금기)",
+        "first_input": "훼스탈 먹어도 될까? 7살 아이에게 줘도 되나요?",
+        "answers": {},
+    },
+    {
+        "name": "[소화제/흐름B] 베아제 - 임산부",
+        "first_input": "베아제 먹어도 돼? 나 임산부야",
+        "answers": {},
+    },
+
+    # ── 복통약 / 흐름 A (증상만) ──────────────────────────
+    {
+        "name": "[복통/흐름A] 설사 증상만 - 성인",
+        "first_input": "설사가 심하고 배가 아파",
+        "answers": {
+            "나이":         "30살",
+            "임산부/수유부": "아니요",
+            "유당불내증":   "아니요",
+        },
+    },
+    {
+        "name": "[복통/흐름A] 설사 - 유당불내증 있음",
+        "first_input": "설사가 심하고 배가 아파",
+        "answers": {
+            "나이":         "30살",
+            "임산부/수유부": "아니요",
+            "유당불내증":   "네",
+        },
+    },
+    {
+        "name": "[복통/흐름A] 과민성대장증후군 의심 - 성인",
+        "first_input": "배가 계속 아프고 설사랑 변비가 반복돼",
+        "answers": {
+            "나이":         "30살",
+            "임산부/수유부": "아니요",
+            "유당불내증":   "아니요",
+        },
+    },
+
+    # ── 복통약 / 흐름 B (약 이름 포함) ───────────────────
+    {
+        "name": "[복통/흐름B] 장엔폴 - 성인 복용 가능",
+        "first_input": "장엔폴 먹어도 돼?",
+        "answers": {
+            "나이":       "아니요",
+            "임산부/수유부": "아니요",
+            "유당불내증": "아니요",
+        },
+    },
+    {
+        "name": "[복통/흐름B] 장엔폴 - 유당불내증 (동성정로환 대체 기대)",
+        "first_input": "장엔폴 먹어도 돼?",
+        "answers": {
+            "나이":       "아니요",
+            "임산부/수유부": "아니요",
+            "유당불내증": "네",
+        },
+    },
+    {
+        "name": "[복통/흐름B] 장엔폴 - 임산부 (복용 불가 기대)",
+        "first_input": "장엔폴 먹으려는데 임신 중이야",
+        "answers": {
+            "나이": "아니요",
+        },
+    },
+    {
+        "name": "[복통/흐름B] 동성정로환 - 성인 복용 가능",
+        "first_input": "동성정로환 먹어도 돼?",
+        "answers": {
+            "나이": "아니요",
+        },
+    },
+    {
+        "name": "[복통/흐름B] 타라부틴 - 유당불내증 (복용 불가 기대)",
+        "first_input": "타라부틴 먹어도 돼?",
+        "answers": {
+            "유당불내증": "네",
+        },
+    },
+]
+
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -583,44 +774,7 @@ if __name__ == "__main__":
 
     mode = input("\n선택 (1/2): ").strip()
     if mode == "1":
-        scenarios = [
-            {
-                "name": "증상만 입력(1)",
-                "first_input": "비염이 있는데 눈이 따가워.",
-            },
-            {
-                "name": "증상만 입력(2)",
-                "first_input": "비염이 있는데 눈이 뜨거워.",
-            },
-            {
-                "name": "증상만 입력(3) ",
-                "first_input": "비염 때문에 눈의 작열감이 느껴져.",
-            },
-            {
-                "name": "증상만 입력(4) ",
-                "first_input": "비염 때문에 눈에 작열감이 느껴져.",
-            },
-            # {
-            #     "name": "세노바퀵",
-            #     "first_input": "알러지 때문에 비염이 심한데 세노바퀵 먹어도 될까?",
-            #     "answers": {
-            #         "과민증" : "네",
-            #         "임산부" : "아니요",
-            #     }
-            # },
-            # {
-            #     "name": "세트린",
-            #     "first_input": "세트린을 복용하려고 해.",
-            #     "answers": {
-            #         "임산부":    "네",
-            #         "소아":      "아니요",
-            #         "간장애": "아니요",
-            #         "신장애": "네",
-            #     }
-            # },
-        ]
-
-        for scenario in scenarios:
+        for scenario in SCENARIOS:
             run_clarify_test(scenario)
     
     elif mode == "2":

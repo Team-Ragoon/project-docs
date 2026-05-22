@@ -64,7 +64,7 @@ def format_drug(item):
     return content
 
 # JSON 불러오기
-with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_data.json", "r", encoding="utf-8") as f:
+with open("C:/Team-Ragoon/project-docs/develop/dataset/drug_data.json", "r", encoding="utf-8") as f:
     items = json.load(f)
 
 print(f"총 {len(items)}개 데이터 로드\n")
@@ -93,7 +93,7 @@ for doc in documents:
         "metadata": doc.metadata
     })
 
-with open("C:/Team-Ragoon/project-docs/study/week10/dataset/drug_documents.json", "w", encoding="utf-8") as f:
+with open("C:/Team-Ragoon/project-docs/develop/dataset/drug_documents.json", "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
 
 # 샘플 출력
@@ -101,4 +101,4 @@ print("=== 변환 결과 샘플 ===\n")
 print(documents[0].page_content)
 print("\n=== 메타데이터 ===")
 print(documents[0].metadata)
-print(f"\n총 {len(documents)}개 Document 생성 완료 → C:/Team-Ragoon/project-docs/study/week10/dataset/drug_documents.json")
+print(f"\n총 {len(documents)}개 Document 생성 완료 → C:/Team-Ragoon/project-docs/develop/dataset/drug_documents.json")

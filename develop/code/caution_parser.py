@@ -68,7 +68,6 @@ LACTOSE_MERGED_SLOT = {
     "reason": "유당(젖당) 관련 유전적 문제가 있는 환자는 복용이 금지됩니다.",
 }
 
-
 def _normalize_subject(subject: str, item: dict) -> tuple[str, dict]:
     if AGE_PATTERN.search(subject):
         return "나이", item
