@@ -24,7 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no
-from medication_loader import get_drug_info
+from medication_loader import get_drug_info, get_drug_all_caution_texts
 
 load_dotenv()
 
@@ -149,11 +149,11 @@ class MedicalChatbot:
 
 
             # 확인용 출력 -----------------------------------------
-            print("\n[caution_slots 현재 상태]")
-            for subject, value in self.state.caution_slots.items():
-                status = "해당" if value else "해당 없음" if value is False else "미응답"
-                print(f"  {subject}: {status}")
-            print("\n")
+            # print("\n[caution_slots 현재 상태]")
+            # for subject, value in self.state.caution_slots.items():
+            #     status = "해당" if value else "해당 없음" if value is False else "미응답"
+            #     print(f"  {subject}: {status}")
+            # print("\n")
             #-------------------------------------------------------
 
             # 다음 역질문 / 최종 답변으로 이동
@@ -310,7 +310,8 @@ class MedicalChatbot:
         return "\n".join(lines)
     
     # 어린이 / 소아로 확인된 경우 키즈/어린이 제형만 반환. / 없으면 전체 반환.
-    def _filter_candidates_by_age(self) -> list[str]:
+    def _filter_candidates_by_age(self, drug_names: list[str] = None) -> list[str]:
+        names = drug_names if drug_names is not None else self.state.drug_names
         context = self.state.caution_slots
         extra = self.state.extra_context
         
@@ -322,17 +323,17 @@ class MedicalChatbot:
         )
         
         if not is_child:
-            return self.state.drug_names
+            return names
         
         # 키즈/소아 제형 필터링
         KIDS_KEYWORDS = ["키즈", "소아", "아동", "어린이"]
         kids_drugs = [
-            d for d in self.state.drug_names
+            d for d in names
             if any(k in d for k in KIDS_KEYWORDS)
         ]
         
         # 키즈 제형이 있으면 키즈만, 없으면 전체 반환
-        return kids_drugs if kids_drugs else self.state.drug_names
+        return kids_drugs if kids_drugs else names
 
     # 약별 성분 및 금기 정보 요약
     def _build_drug_profiles_for(self, drug_names: list[str]) -> str:
@@ -379,9 +380,9 @@ class MedicalChatbot:
         
         return False  # 나머지는 모두 2~3개 추천
 
+
     # 금기 배제 후 남은 후보 약 목록
     def _get_remaining_candidates(self, applicable_subjects: set) -> list[str]:
-        from medication_loader import get_drug_all_caution_texts
         remaining = []
         for name in self.state.drug_names:
             texts = get_drug_all_caution_texts(name)
@@ -391,6 +392,7 @@ class MedicalChatbot:
             if not excluded:
                 remaining.append(name)
         return remaining
+
 
     # 증상이 후보 약 중 오직 1개의 효능에만 포함되는지 확인.
     def _symptom_matches_only_one(self) -> bool:
@@ -434,6 +436,7 @@ class MedicalChatbot:
             "user_profile" : user_profile,
         })
 
+
         # 사용자가 해당 약을 복용할 수 있는지 판단.
         applicable = [
             f"- {c['subject']}: {c['reason']}"
@@ -441,6 +444,30 @@ class MedicalChatbot:
             if self.state.caution_slots.get(c["subject"]) is True
         ]
 
+        # applicable_subjects는 applicable에서 추출
+        applicable_subjects = {
+            c["subject"]
+            for c in all_contraindications
+            if self.state.caution_slots.get(c["subject"]) is True
+        }
+
+        # ── 확인용 print ────────────────────────────────
+        print(f"[caution_slots] {self.state.caution_slots}")
+        print(f"[applicable] {applicable}")
+        print(f"[applicable_subjects] {applicable_subjects}")
+        # ─────────────────────────────────────────────
+
+        can_drugs = self._get_remaining_candidates(applicable_subjects) if applicable_subjects else drug_names
+
+         # 복용 가능한 약이 없는 경우 → 전체 복용 불가
+        if not can_drugs or (applicable and set(can_drugs) == set(drug_names)):
+            answer = self.cannot_recommend.invoke({
+                "drug_keyword": drug_keyword,
+                "user_profile": user_profile,
+                "applicable_cautions": "\n".join(applicable),
+            })
+            return f"{summary}\n\n{answer}"
+        
         # 확인 안 된 slot (역질문 하지 않은 사항들)
         unchecked = [
             c["subject"]
@@ -450,37 +477,30 @@ class MedicalChatbot:
         ]
 
 
-        if applicable:
-            # 복용 불가 -> 이유 설명
-            answer = self.cannot_recommend.invoke({
-                "drug_keyword" : drug_keyword,
-                "user_profile" : user_profile,
-                "applicable_cautions" : "\n".join(applicable),
-            })
-        else:
-            # 연령 기반 후보 필터링
-            filtered_names = self._filter_candidates_by_age()
+        # 연령 기반 후보 필터링
+        filtered_names = self._filter_candidates_by_age(can_drugs)
+        print(f"[can_drugs] {can_drugs}")
 
-            # 필터링된 후보로 1개 추천 여부 판별
-            original_names = self.state.drug_names
-            self.state.drug_names = filtered_names  # 임시 교체
-            recommend_single = self._should_recommend_single()
-            recommend_count = "1개" if recommend_single else "2~3개"
-            self.state.drug_names = original_names  # 복구
+        # 필터링된 후보로 1개 추천 여부 판별
+        original_names = self.state.drug_names
+        self.state.drug_names = filtered_names  # 임시 교체
+        recommend_single = self._should_recommend_single()
+        recommend_count = "1개" if recommend_single else "2~3개"
+        self.state.drug_names = original_names  # 복구
 
-            drug_profiles = self._build_drug_profiles_for(filtered_names)
+        drug_profiles = self._build_drug_profiles_for(filtered_names)
 
-            answer = self.recommend_final.invoke({
-                "drug_keyword" : drug_keyword,
-                "symptom" : self.state.symptom or "언급 없음",
-                "drug_candidates" : "\n".join(f"- {d}" for d in drug_names),
-                "drug_profiles" : drug_profiles, 
-                "user_profile" : user_profile,
-                "applicable_cautions": "특별한 금기사항 해당 없음",
-                "extra_context" : extra_context or "없음",
-                "unchecked_cautions": ", ".join(unchecked) if unchecked else "없음",
-                "recommend_count" : recommend_count,
-            }) 
+        answer = self.recommend_final.invoke({
+            "drug_keyword" : drug_keyword,
+            "symptom" : self.state.symptom or "언급 없음",
+            "drug_candidates" : "\n".join(f"- {d}" for d in filtered_names),
+            "drug_profiles" : drug_profiles, 
+            "user_profile" : user_profile,
+            "applicable_cautions": "특별한 금기사항 해당 없음",
+            "extra_context" : extra_context or "없음",
+            "unchecked_cautions": ", ".join(unchecked) if unchecked else "없음",
+            "recommend_count" : recommend_count,
+        }) 
 
         return f"{summary}\n\n{answer}"
 

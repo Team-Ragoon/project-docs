@@ -106,9 +106,13 @@ class SlotValidator:
         result = []
         auto_filled = 0 # 자동 처리된 슬롯 수
         user_age = extra_context.get("나이")  # 숫자값
+        #print(f"[user_age] {user_age}")
+        #print(f"[filled 진입 시] {filled}")
+
 
         for c in self.get_contraindications(drug_names):
             subject = c["subject"]
+
 
             # 이미 답변된 슬롯 스킵
             if filled.get(subject) is not None:
@@ -125,7 +129,7 @@ class SlotValidator:
                     # 기준 나이 미만이면 True(금기), 이상이면 False(비금기)로 자동 저장
                     filled["나이"] = user_age < threshold
                     auto_filled += 1
-                continue  # 역질문 안 함
+                    continue  # 역질문 안 함
 
             #user_age는 없지만 소아 여부가 있는 경우 -> 역질문 포함
             if subject == "나이" and extra_context.get("소아여부") is True:

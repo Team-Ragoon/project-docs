@@ -89,6 +89,7 @@ class DialogueState:
     # (해당 함수 호출 전에 긍정/부정 응답 판단을 위한 함수인 parse_yes_no 호출한 상태 -> parse_yes_no가 반환한 bool 타입 값을 저장.)
     def record_clarify_answer(self, subject: str, is_positive: bool):
         self.caution_slots[subject] = is_positive
+        #print(f"[record_clarify_answer] {subject}: {is_positive}")
     
 
     def get_history(self) -> list:

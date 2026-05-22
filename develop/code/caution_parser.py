@@ -18,7 +18,9 @@ CONTRAINDICATION_PATTERNS = [
 # 역질문 시 우선순위 판별 키워드 (숫자가 낮을수록 높은 우선순위)
 PRIORITY_RULES = [
     # 우선순위 1: 나이 (N세/개월 미만·이하)
-    (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|\b나이\b")),
+    (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)"
+                   r"|소아|영아|유아|젖먹이|신생아|영유아|어린이"
+                   r"\b나이\b")),
     # 우선순위 2: 임부/임산부/수유부 (알코올보다 우선)
     (2, re.compile(r"임부|임신 가능성|임산부|수유부|수유 중|임산부/수유부")),
     # 우선순위 3: 알코올
@@ -52,10 +54,18 @@ AGE_PATTERN = re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|
 
 PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
 
+LACTOSE_PATTERN = re.compile(r"갈락토오스\s*불내성|유당\s*분해효소\s*결핍|젖당\s*분해효소\s*결핍|포도당.갈락토오스\s*흡수장애|유당불내증|젖당불내증")
+
 PREG_MERGED_SLOT = {
     "subject": "임산부/수유부",
     "question": "혹시 임산부이시거나 수유 중이신가요?",
     "reason": "태아 또는 모유를 통해 아기에게 영향을 줄 수 있음",
+}
+
+LACTOSE_MERGED_SLOT = {
+    "subject": "유당불내증",
+    "question": "혹시 유당불내증(우유나 유제품을 먹으면 복통·설사가 생기는 경우)이 있으신가요?",
+    "reason": "유당(젖당) 관련 유전적 문제가 있는 환자는 복용이 금지됩니다.",
 }
 
 
@@ -64,6 +74,8 @@ def _normalize_subject(subject: str, item: dict) -> tuple[str, dict]:
         return "나이", item
     elif PREG_PATTERN.search(subject):
         return "임산부/수유부", {**item, **PREG_MERGED_SLOT}
+    elif LACTOSE_PATTERN.search(subject):
+        return "유당불내증", {**item, **LACTOSE_MERGED_SLOT}
     return subject, item
 
 
@@ -150,6 +162,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
 
     # 우선순위 정렬
     sorted_items = sorted(deduped, key = _get_priority)
+    print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
 
     # 정렬 후 정규화 적용
     final_items = []
@@ -161,11 +174,11 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     _cache[cache_key] = tuple(final_items)
 
     # 확인용 출력 ----------------------------------------
-    print("\n[역질문 목록]")
-    for i, item in enumerate(_cache[cache_key], 1):
-        print(f"  {i}. subject: {item['subject']}")
-        print(f"     question: {item['question']}")
-        print(f"     reason:   {item['reason']}")
+    # print("\n[역질문 목록]")
+    # for i, item in enumerate(_cache[cache_key], 1):
+    #     print(f"  {i}. subject: {item['subject']}")
+    #     print(f"     question: {item['question']}")
+    #     print(f"     reason:   {item['reason']}")
     # ---------------------------------------------------- 
 
     return _cache[cache_key]

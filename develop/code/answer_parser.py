@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
 # 1차: 규칙 기반 키워드 매칭
-POSITIVE_KEYWORDS = ["예", "네", "맞아", "있어", "있음", "해당", "그렇", "맞습니다", "맞아요", "그래"]
+POSITIVE_KEYWORDS = ["예", "네", "맞아", "있어", "있음", "해당", "그렇", "맞습니다", "맞아요", "그래", "응"]
 NEGATIVE_KEYWORDS = ["아니", "없어", "없음", "아님", "안 해당", "아닙니다", "아니에요", "아니요"]
 
 
