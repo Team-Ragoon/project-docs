@@ -70,26 +70,29 @@ class SlotValidator:
 
     # 약 이름을 사용해서 금기 대상 목록 찾기. (llm으로 추고화까지 끝냄)
     # 우선 순위 정렬된 금기 목록을 반환. (아세트아미노펜 성분이 있다면 3번째 위치에 최대 용량 슬롯 삽입하기.)
-    def get_contraindications(self, drug_names: str) -> list[dict]:
+    def get_contraindications(self, drug_names: list[str]) -> list[dict]:
         items = list(parse_contraindications_for_drugs(drug_names, self.llm))
-        
+
         if has_acetaminophen(drug_names):
-            items = self._insert_acetaminophen_slot(items)
-        
+            items = self._insert_acetaminophen_slot(items, drug_names)
+
         return items
-    
-    
+
+
     # 아세트아미노펜 성분이 있을 때 슬롯 삽입하는 동작 구현.
-    def _insert_acetaminophen_slot(self, items: list[dict]) -> list[dict]:
-        # 우선순위 3위에 삽입. 
+    def _insert_acetaminophen_slot(self, items: list[dict], drug_names: list[str]) -> list[dict]:
+        # 우선순위 3위에 삽입.
 
         if any(item["subject"] == ACETAMINOPHEN_SLOT["subject"] for item in items):
             return items
 
+        # 아세트아미노펜 성분이 있는 약만 applicable_drugs에 포함
+        applicable = [d for d in drug_names if has_acetaminophen([d])]
+        slot = {**ACETAMINOPHEN_SLOT, "applicable_drugs": applicable or list(drug_names)}
+
         insert_idx = 0
         for item in items:
             subject = item.get("subject", "")
-            # 정규화된 subject 기준으로 판별
             is_age  = subject == "나이"
             is_preg = subject == "임산부/수유부"
             if is_age or is_preg:
@@ -97,8 +100,8 @@ class SlotValidator:
             else:
                 break
 
-        items.insert(insert_idx, ACETAMINOPHEN_SLOT)
-        return items       
+        items.insert(insert_idx, slot)
+        return items
 
 
     # 금기 목록 중 아직 질문 하지 않은 것만 filtering
@@ -122,14 +125,18 @@ class SlotValidator:
             if self._should_skip(subject, filled, extra_context):
                 continue
 
-            # 나이 슬롯: extra_context에 나이가 있으면 기준과 비교해서 자동 처리
+            # 나이 슬롯: extra_context에 나이가 있으면 약별 threshold와 비교해서 자동 처리
             if subject == "나이" and user_age is not None:
-                threshold = self._get_age_threshold(c["question"])  # question에서 기준 나이 추출
-                if threshold is not None:
-                    # 기준 나이 미만이면 True(금기), 이상이면 False(비금기)로 자동 저장
-                    filled["나이"] = user_age < threshold
-                    auto_filled += 1
-                    continue  # 역질문 안 함
+                age_thresholds = c.get("age_thresholds", {})
+                if age_thresholds:
+                    # 약별 기준 나이 중 하나라도 미만이면 True(금기 약 존재)
+                    filled["나이"] = any(user_age < t for t in age_thresholds.values())
+                else:
+                    # age_thresholds 없는 경우 question 텍스트에서 threshold 추출 (fallback)
+                    threshold = self._get_age_threshold(c["question"])
+                    filled["나이"] = (user_age < threshold) if threshold is not None else False
+                auto_filled += 1
+                continue  # 역질문 안 함
 
             #user_age는 없지만 소아 여부가 있는 경우 -> 역질문 포함
             if subject == "나이" and extra_context.get("소아여부") is True:

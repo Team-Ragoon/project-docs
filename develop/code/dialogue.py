@@ -16,7 +16,7 @@ class DialogueState:
         self.caution_slots : dict = {} # 금기 사항에 대한 사용자의 정보
         self.extra_context: dict = {}  # query에서 금기 사항에 해당하지는 않지만 사용자의 증상에 해당하는 text
         self.clarify_count : int = 0 # 역질문 횟수
-        self._history : list = []
+        self._history : list = [] # 흐름 A에서 사용자의 history 저장을 위해 사용.
         self._cached_context : str = "" # 흐름 A 첫 턴의 retrieval 결과를 역질문 중에 재사용
         self._in_flow_a_clarify : bool = False # 흐름 A 역질문 진행 중 여부 (패턴 매칭보다 안전)
 

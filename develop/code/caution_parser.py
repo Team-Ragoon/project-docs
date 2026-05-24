@@ -68,6 +68,18 @@ LACTOSE_MERGED_SLOT = {
     "reason": "유당(젖당) 관련 유전적 문제가 있는 환자는 복용이 금지됩니다.",
 }
 
+# 금기 텍스트에서 "N세/개월 미만·이하" 기준 나이(세) 추출.
+# "65세 이상 고령자" 등 미만/이하가 없는 표현은 의도적으로 무시.
+def _extract_age_threshold(text: str) -> float | None:
+    year_match = re.search(r"(\d+)\s*세\s*(미만|이하)", text)
+    if year_match:
+        return float(year_match.group(1))
+    month_match = re.search(r"(\d+)\s*개월\s*(미만|이하)", text)
+    if month_match:
+        return int(month_match.group(1)) / 12
+    return None
+
+
 def _normalize_subject(subject: str, item: dict) -> tuple[str, dict]:
     if AGE_PATTERN.search(subject):
         return "나이", item
@@ -118,35 +130,49 @@ def build_caution_parser_chain(llm: ChatOpenAI):
 _cache: dict[str, tuple[dict, ...]] = {}
 
 
+# 정규화된 subject에 맞는 약 텍스트 매칭 패턴 반환.
+# 기존 AGE_PATTERN / PREG_PATTERN / LACTOSE_PATTERN 우선 사용,
+# 그 외는 PRIORITY_RULES에서 탐색, 없으면 subject 자체로 검색.
+def _get_subject_pattern(subject: str) -> re.Pattern:
+    if subject == "나이":
+        return AGE_PATTERN
+    if subject == "임산부/수유부":
+        return PREG_PATTERN
+    if subject == "유당불내증":
+        return LACTOSE_PATTERN
+    for _, pattern in PRIORITY_RULES:
+        if pattern.search(subject):
+            return pattern
+    return re.compile(re.escape(subject))
+
+
 # 여러 약의 주의사항을 합산 및 parsing해서 역질문 목록 만드는 함수.
 # 결과를 _cache에 저장해서 동일 약 reparsing 방지. (동일 약들 => 역질문 목록 다시 만들지 않음.)
 def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) -> tuple[dict, ...]:
-    
+
     # cache key : 약 이름 목록을 정렬해서 문자열로
     cache_key = "|".join(sorted(drug_names))
     if cache_key in _cache:
         return _cache[cache_key]
-    
-    # 후보 약 전체 주의사항 합산
+
+    # 후보 약 전체 주의사항 합산 + 약별 텍스트 보관 (applicable_drugs 매핑에 사용)
+    drug_texts: dict[str, str] = {}
     combined_texts = []
     for drug_name in drug_names:
         texts = get_drug_all_caution_texts(drug_name)
+        drug_texts[drug_name] = texts["atpnQesitm"] + "\n" + texts["intrcQesitm"]
+        # 각 약별로 텍스트 보관하기.
         combined_texts.append(texts["atpnQesitm"])
         combined_texts.append(texts["intrcQesitm"])
-        #combined_texts.append(texts["atpnWarnQesitm"])
-    
-    combined = "\n".join(t for t in combined_texts if t)
-    #print(f"[combined 길이] {len(combined)}자")
-    sentences = _extract_contraindication_sentencese(combined)
-    # print(f"[추출된 금기 문장 수] {len(sentences)}개")
-    # print(f"[추출된 문장들]\n" + "\n".join(sentences))
 
+    combined = "\n".join(t for t in combined_texts if t)
+    sentences = _extract_contraindication_sentencese(combined)
 
     if not sentences:
         _cache[cache_key] = ()
         return ()
 
-    
+
     chain = build_caution_parser_chain(llm)
     raw: list[dict] = chain.invoke({"sentences" : "\n".join(sentences)})
 
@@ -163,11 +189,29 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     sorted_items = sorted(deduped, key = _get_priority)
     print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
 
-    # 정렬 후 정규화 적용
+    # 정규화 + applicable_drugs + (나이 슬롯은 age_thresholds) 추가
     final_items = []
     for item in sorted_items:
         normalized, updated_item = _normalize_subject(item["subject"], item)
         updated_item["subject"] = normalized
+        pattern = _get_subject_pattern(normalized)
+        updated_item["applicable_drugs"] = [
+            drug for drug, text in drug_texts.items()
+            if pattern.search(text)
+        ] or list(drug_names)  # 매칭 없으면 모든 약에 적용 (안전 fallback)
+
+        if normalized == "나이":
+            # 약별 나이 기준(세) 추출 → 최종 답변 시 약별 정밀 판단에 사용
+            age_thresholds = {}
+            for drug in updated_item["applicable_drugs"]:
+                drug_sentences = _extract_contraindication_sentencese(drug_texts.get(drug, ""))
+                threshold = _extract_age_threshold(" ".join(drug_sentences))
+                if threshold is not None:
+                    age_thresholds[drug] = threshold
+            updated_item["age_thresholds"] = age_thresholds
+            # 정확한 나이를 직접 묻는 질문으로 고정 (yes/no 형태 방지)
+            updated_item["question"] = "복용하실 분의 정확한 나이를 알려주세요. (예: 7세, 30세)"
+
         final_items.append(updated_item)
 
     _cache[cache_key] = tuple(final_items)
@@ -176,8 +220,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     # print("\n[역질문 목록]")
     # for i, item in enumerate(_cache[cache_key], 1):
     #     print(f"  {i}. subject: {item['subject']}")
-    #     print(f"     question: {item['question']}")
-    #     print(f"     reason:   {item['reason']}")
-    # ---------------------------------------------------- 
+    #     print(f"     applicable_drugs: {item['applicable_drugs']}")
+    # ----------------------------------------------------
 
     return _cache[cache_key]

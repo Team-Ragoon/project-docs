@@ -23,8 +23,8 @@ from rag import (
     build_cannot_recommend_chain, build_recommend_final_chain)
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
-from answer_parser import parse_yes_no
-from medication_loader import get_drug_info, get_drug_all_caution_texts
+from answer_parser import parse_yes_no, parse_age
+from medication_loader import get_drug_info
 
 load_dotenv()
 
@@ -191,15 +191,31 @@ class MedicalChatbot:
 
         # 흐름 B 역질문 진행.
         if self._pending_subject:
-            # 역질문에 대한 사용자의 답변의 긍정/부정 여부를 판단. 
-            is_positive = parse_yes_no(
-                user_input = user_input,
-                question = self._pending_question,
-                subject = self._pending_subject,
-                llm = llm
-            )
-            # 긍정/부정 여부를 질문과 함께 저장한 후, 다음 질문을 위한 초기화.
-            self.state.record_clarify_answer(self._pending_subject, is_positive)
+            if self._pending_subject == "나이":
+                # 나이는 숫자로 추출 후 extra_context에 저장, caution_slots는 약별 threshold로 결정
+                age = parse_age(user_input, llm)
+                if age is not None:
+                    self.state.extra_context["나이"] = age
+                    contraindications = self.validator.get_contraindications(self.state.drug_names)
+                    age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
+                    is_contraindicated = (
+                        age_slot is not None
+                        and any(age < t for t in age_slot.get("age_thresholds", {}).values())
+                    )
+                    self.state.caution_slots["나이"] = is_contraindicated
+                else:
+                    # 나이를 전혀 파악할 수 없는 경우: 금기 없음으로 처리 (재질문 없음)
+                    self.state.caution_slots["나이"] = False
+            else:
+                # 나이 외 슬롯: 기존 yes/no 판단
+                is_positive = parse_yes_no(
+                    user_input=user_input,
+                    question=self._pending_question,
+                    subject=self._pending_subject,
+                    llm=llm,
+                )
+                self.state.record_clarify_answer(self._pending_subject, is_positive)
+
             self._pending_subject = None
             self._pending_question = None
 
@@ -323,18 +339,27 @@ class MedicalChatbot:
         모든 슬롯이 채워졌으면 최종 답변 생성
         역질문 응답 처리 후 / medication 진입 시 공통 호출
         """
-        # 사용자 query에 금기 사항에 해당하는 내용이 있다면 역질문 X => 바로 복용 불가 안내 진행.
-        if any(v is True for v in self.state.caution_slots.values()):
+        # 현재까지 True인 슬롯 기준으로 복용 가능한 약 먼저 계산
+        applicable_subjects = {s for s, v in self.state.caution_slots.items() if v is True}
+        can_drugs = (
+            self._get_remaining_candidates(applicable_subjects)
+            if applicable_subjects
+            else list(self.state.drug_names)
+        )
+
+        # 복용 가능한 약이 없으면 최종 답변 (모두 금기)
+        if not can_drugs:
             return self._generate_final_answer()
 
+        # 남은 약 기준으로 아직 확인 안 된 슬롯이 있으면 MAX_CLARIFY까지 역질문 계속
         if self.validator.should_clarify(
-            self.state.drug_names,
+            can_drugs,
             self.state.caution_slots,
             self.state.clarify_count,
             self.state.extra_context,
         ):
             slot = self.validator.get_priority_slot(
-                self.state.drug_names,
+                can_drugs,
                 self.state.caution_slots,
                 self.state.extra_context,
             )
@@ -389,23 +414,20 @@ class MedicalChatbot:
             or extra.get("소아여부") is True
         )
         
-        if not is_child:
-            return names
-        
-        # 키즈/소아 제형 필터링
         KIDS_KEYWORDS = ["키즈", "소아", "아동", "어린이"]
-        kids_drugs = [
-            d for d in names
-            if any(k in d for k in KIDS_KEYWORDS)
-        ]
-        
-        # 키즈 제형이 있으면 키즈만, 없으면 전체 반환
-        return kids_drugs if kids_drugs else names
+
+        if is_child:
+            kids_drugs = [d for d in names if any(k in d for k in KIDS_KEYWORDS)]
+            return kids_drugs if kids_drugs else names
+
+        # 성인: 키즈 제형 제외
+        adult_drugs = [d for d in names if not any(k in d for k in KIDS_KEYWORDS)]
+        return adult_drugs if adult_drugs else names
 
     # 약별 성분 및 금기 정보 요약
     def _build_drug_profiles_for(self, drug_names: list[str]) -> str:
         lines = []
-        for name in self.state.drug_names:
+        for name in drug_names:
             drug = get_drug_info(name)
             if not drug:
                 continue
@@ -449,16 +471,26 @@ class MedicalChatbot:
 
 
     # 금기 배제 후 남은 후보 약 목록
+    # applicable_drugs 필드로 텍스트 재검색 없이 결정.
+    # "나이" subject는 age_thresholds + extra_context["나이"]로 약별 정밀 판단.
     def _get_remaining_candidates(self, applicable_subjects: set) -> list[str]:
-        remaining = []
-        for name in self.state.drug_names:
-            texts = get_drug_all_caution_texts(name)
-            combined = texts["atpnQesitm"] + texts["intrcQesitm"]
-            # 해당 약에 금기 subject가 언급되면 제외
-            excluded = any(subject in combined for subject in applicable_subjects)
-            if not excluded:
-                remaining.append(name)
-        return remaining
+        if not applicable_subjects:
+            return list(self.state.drug_names)
+        contraindications = self.validator.get_contraindications(self.state.drug_names)
+        user_age = self.state.extra_context.get("나이")
+        excluded = set()
+        for c in contraindications:
+            subject = c["subject"]
+            if subject not in applicable_subjects:
+                continue
+            if subject == "나이" and user_age is not None:
+                # 약별 나이 기준으로 개별 판단 (합산 기준 아님)
+                for drug, threshold in c.get("age_thresholds", {}).items():
+                    if user_age < threshold:
+                        excluded.add(drug)
+            else:
+                excluded.update(c.get("applicable_drugs", self.state.drug_names))
+        return [d for d in self.state.drug_names if d not in excluded]
 
 
     # 증상이 후보 약 중 오직 1개의 효능에만 포함되는지 확인.
