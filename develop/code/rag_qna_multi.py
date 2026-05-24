@@ -351,17 +351,19 @@ class MedicalChatbot:
         if not can_drugs:
             return self._generate_final_answer()
 
-        # 남은 약 기준으로 아직 확인 안 된 슬롯이 있으면 MAX_CLARIFY까지 역질문 계속
+        # 캐시 조회는 전체 drug_names로(재파싱 방지), 질문 필터링은 can_drugs로
         if self.validator.should_clarify(
-            can_drugs,
+            self.state.drug_names,
             self.state.caution_slots,
             self.state.clarify_count,
             self.state.extra_context,
+            can_drugs=can_drugs,
         ):
             slot = self.validator.get_priority_slot(
-                can_drugs,
+                self.state.drug_names,
                 self.state.caution_slots,
                 self.state.extra_context,
+                can_drugs=can_drugs,
             )
             response = self.clarifier.invoke({
                 "filled_slots": self.state.caution_slots,

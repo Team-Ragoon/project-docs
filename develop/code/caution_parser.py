@@ -20,7 +20,7 @@ PRIORITY_RULES = [
     # 우선순위 1: 나이 (N세/개월 미만·이하)
     (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)"
                    r"|소아|영아|유아|젖먹이|신생아|영유아|어린이"
-                   r"\b나이\b")),
+                   r"|\b나이\b")),
     # 우선순위 2: 임부/임산부/수유부 (알코올보다 우선)
     (2, re.compile(r"임부|임신 가능성|임산부|수유부|수유 중|임산부/수유부")),
     # 우선순위 3: 알코올
@@ -217,10 +217,10 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     _cache[cache_key] = tuple(final_items)
 
     # 확인용 출력 ----------------------------------------
-    # print("\n[역질문 목록]")
-    # for i, item in enumerate(_cache[cache_key], 1):
-    #     print(f"  {i}. subject: {item['subject']}")
-    #     print(f"     applicable_drugs: {item['applicable_drugs']}")
+    print("\n[역질문 목록]")
+    for i, item in enumerate(_cache[cache_key], 1):
+        print(f"  {i}. subject: {item['subject']}")
+        print(f"     applicable_drugs: {item['applicable_drugs']}")
     # ----------------------------------------------------
 
     return _cache[cache_key]

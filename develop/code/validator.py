@@ -105,21 +105,25 @@ class SlotValidator:
 
 
     # 금기 목록 중 아직 질문 하지 않은 것만 filtering
-    def get_missing_slots(self, drug_names: list[str], filled: dict, extra_context: dict = {}) -> tuple[list[dict],int]:
+    # can_drugs: 현재 복용 가능한 약 목록. 지정 시 applicable_drugs가 can_drugs와 겹치지 않는 슬롯은 스킵.
+    def get_missing_slots(self, drug_names: list[str], filled: dict, extra_context: dict = {}, can_drugs: list[str] | None = None) -> tuple[list[dict],int]:
         result = []
         auto_filled = 0 # 자동 처리된 슬롯 수
         user_age = extra_context.get("나이")  # 숫자값
-        #print(f"[user_age] {user_age}")
-        #print(f"[filled 진입 시] {filled}")
-
+        can_drugs_set = set(can_drugs) if can_drugs is not None else None
 
         for c in self.get_contraindications(drug_names):
             subject = c["subject"]
 
-
             # 이미 답변된 슬롯 스킵
             if filled.get(subject) is not None:
                 continue
+
+            # can_drugs 필터: applicable_drugs 중 can_drugs에 남아있는 약이 없으면 스킵
+            if can_drugs_set is not None:
+                applicable = c.get("applicable_drugs", drug_names)
+                if not any(d in can_drugs_set for d in applicable):
+                    continue
 
             # 스킵 조건 확인
             if self._should_skip(subject, filled, extra_context):
@@ -148,14 +152,14 @@ class SlotValidator:
 
 
     # 역질문 횟수를 넘기기 않았는지 판단.
-    def should_clarify(self, drug_name: str, filled: dict, count: int, extra_context: dict = {}) -> bool:
+    def should_clarify(self, drug_name: str, filled: dict, count: int, extra_context: dict = {}, can_drugs: list[str] | None = None) -> bool:
         if count >= self.MAX_CLARIFY:
             return False
-        slots, _ = self.get_missing_slots(drug_name, filled, extra_context)
+        slots, _ = self.get_missing_slots(drug_name, filled, extra_context, can_drugs)
         return len(slots) > 0
-    
+
 
     # 다음 금기 목록 1개 반환.
-    def get_priority_slot(self, drug_name: str, filled: dict, extra_context: dict = {}) -> dict | None:
-        slots, _ = self.get_missing_slots(drug_name, filled, extra_context)
+    def get_priority_slot(self, drug_name: str, filled: dict, extra_context: dict = {}, can_drugs: list[str] | None = None) -> dict | None:
+        slots, _ = self.get_missing_slots(drug_name, filled, extra_context, can_drugs)
         return slots[0] if slots else None

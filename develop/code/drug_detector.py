@@ -71,13 +71,16 @@ def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
     for name in drug_names:
         for token in tokens:
             cleaned = _remove_josa(token)
+            # cleaned가 STOPWORDS에 해당하면 조사 제거 버전으로 매칭하지 않음
+            safe_cleaned = cleaned if cleaned not in STOPWORDS else token
+
             # 1차: 토큰이 약 이름에 포함
-            if cleaned in name or token in name:
+            if safe_cleaned in name or token in name:
                 #print(f"[포함 매칭] token='{token}' → '{name}'")
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
-                    user_keyword = cleaned # 조사 제거된 버전으로 저장.
+                    user_keyword = safe_cleaned
                 break
 
             # 2차: Fuzzy 매칭 (길이 3 이상 토큰만)
@@ -86,7 +89,7 @@ def detect_drugs_in_text(text: str) -> tuple[list[str], str | None]:
                 if name not in matched:
                     matched.append(name)
                 if not user_keyword:
-                    user_keyword = cleaned
+                    user_keyword = safe_cleaned
                 break
 
     return matched, user_keyword
