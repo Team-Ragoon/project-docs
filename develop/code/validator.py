@@ -33,37 +33,17 @@ class SlotValidator:
 
         return None
 
-    # 이미 채워진 슬롯 기반으로 특정 슬롯을 건너뛸지 판단.
-    # 임산부/수유부에 해당 -> 나이(01세 미만) 관련 역질문 스킵
-    # 나이(10세 미만) 해당 -> 임산부/수유부 역질문 스킵
+    # 사용자가 직접 입력한 나이가 10세 이하이거나 소아여부가 확인된 경우 임산부/수유부 역질문 스킵.
+    # 임산부/수유부 확인 여부와 관계없이 나이 역질문은 항상 진행 (약마다 threshold가 다르므로).
     def _should_skip(self, subject: str, filled: dict, extra_context: dict = {}) -> bool:
         is_preg_subject = bool(PREG_PATTERN.search(subject) or subject == "임산부/수유부")
-        is_age_subject  = bool(CHILD_AGE_PATTERN.search(subject) or subject == "나이")
+        user_age = extra_context.get("나이")  # 직접 입력받은 숫자 나이
 
-        user_age = extra_context.get("나이")
-
-        # caution_slots 또는 extra_context에서 임산부/수유부 확인
-        preg_positive = (
-            filled.get("임산부/수유부") is True
-            or any(PREG_PATTERN.search(k) and v is True for k, v in extra_context.items())
-        )
-
-
-     # 나이 슬롯이 True로 채워졌거나, extra_context 나이가 기준 미만인 경우
-        age_positive = (filled.get("나이") is True
-                        or (user_age is not None and user_age <= 10)
-                        or extra_context.get("소아여부") is True)
-        
-        if not age_positive and user_age is not None and is_preg_subject:
-            # 임산부/수유부 스킵 여부: 나이가 10세 이하면 스킵
-            age_positive = user_age <= 10       
-
-
-        if is_age_subject and preg_positive:
-            return True
-        if is_preg_subject and age_positive:
-            return True
-
+        if is_preg_subject:
+            if user_age is not None and user_age <= 10:
+                return True
+            if extra_context.get("소아여부") is True:
+                return True
 
         return False
 
