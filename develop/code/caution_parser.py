@@ -12,6 +12,7 @@ CONTRAINDICATION_PATTERNS = [
     r"[^.\n]*복용을\s*피하십시오[^.\n]*[.\n]",
     r"[^.\n]*함께\s*복용하지\s*마십시오[^.\n]*[.\n]",
     r"[^.\n]*함께\s*사용하지\s*마십시오[^.\n]*[.\n]",
+    r"[^.\n]*음주하지\s*마십시오[^.\n]*[.\n]",
     r"[^.\n]*금기[^.\n]*[.\n]",
 ]
 
@@ -161,13 +162,19 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     if cache_key in _cache:
         return _cache[cache_key]
 
-    # 후보 약 전체 주의사항 합산 + 약별 텍스트 보관 (applicable_drugs 매핑에 사용)
+    # 후보 약 전체 주의사항 합산 + 약별 텍스트 보관
     drug_texts: dict[str, str] = {}
+    # applicable_drugs 매핑용: 금기 문장만 추출한 텍스트 (전체 텍스트 사용 시 "상의하십시오" 절의
+    # 키워드도 hit되어 실제 금기가 아닌 약이 포함되는 오탐 방지)
+    drug_contraindication_texts: dict[str, str] = {}
     combined_texts = []
     for drug_name in drug_names:
         texts = get_drug_all_caution_texts(drug_name)
-        drug_texts[drug_name] = texts["atpnQesitm"] + "\n" + texts["intrcQesitm"]
-        # 각 약별로 텍스트 보관하기.
+        full_text = texts["atpnQesitm"] + "\n" + texts["intrcQesitm"]
+        drug_texts[drug_name] = full_text
+        drug_contraindication_texts[drug_name] = " ".join(
+            _extract_contraindication_sentencese(full_text)
+        )
         combined_texts.append(texts["atpnQesitm"])
         combined_texts.append(texts["intrcQesitm"])
 
@@ -202,7 +209,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
         updated_item["subject"] = normalized
         pattern = _get_subject_pattern(normalized)
         updated_item["applicable_drugs"] = [
-            drug for drug, text in drug_texts.items()
+            drug for drug, text in drug_contraindication_texts.items()
             if pattern.search(text)
         ] or list(drug_names)  # 매칭 없으면 모든 약에 적용 (안전 fallback)
 
