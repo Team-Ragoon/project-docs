@@ -204,12 +204,12 @@
 
 ## rag.py 체인 목록
 
-| 함수 | 용도 | 상태 |
+| 함수 | 용도 | 상태 | 흐름 |
 |------|------|------|
-| `build_rag_chain` | 증상 입력 → 바로 RAG 추천 | 사용 중 |
-| `build_recommend_final_chain` | 슬롯 완료 후 최종 추천 | 사용 중 |
-| `build_cannot_recommend_chain` | 복용 불가 시 이유 설명 | 사용 중 |
-| `build_summarize_chain` | 역질문 후 상황 요약 | 사용 중 |
+| `build_rag_chain` | 증상 입력 → 바로 RAG 추천 | 사용 중 | A |
+| `build_recommend_final_chain` | 슬롯 완료 후 최종 추천 | 사용 중 | B |
+| `build_cannot_recommend_chain` | 복용 불가 시 이유 설명 | 사용 중 | B |
+| `build_summarize_chain` | 역질문 후 상황 요약 | 사용 중 | B |
 
 
 ---

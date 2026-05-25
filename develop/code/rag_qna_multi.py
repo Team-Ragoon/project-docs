@@ -148,34 +148,39 @@ class MedicalChatbot:
         self.cannot_recommend = build_cannot_recommend_chain(llm = llm)
         self._pending_subject: str | None = None
         self._pending_question: str | None = None
-    
-    def chat(self, user_input: str) -> str:
 
+    def _flow_a_reply(self, user_input: str, *, first_turn: bool) -> str:
+        
         # 흐름 A 역질문 진행 중 (상태 플래그로 판단 — 패턴 매칭보다 안전)
         # 검색 스킵 + 첫 턴에서 캐시된 context 재사용 + chat_history로 LLM이 다음 질문/최종 답변 생성
-        if self.state._in_flow_a_clarify:
-            history = self.state.get_history()
-
+        if first_turn:
+            self.state._cached_context = retriever_multi(user_input)
+            self.state._in_flow_a_clarify = True
+        else:
             # 사용자가 새 약 이름을 언급했는지 탐지 -> 발견 시 context에 해당 약 문서 추가
             # (예: "복용 중인 약?" → "판콜" → 판콜 문서를 context에 보강)
             mentioned_drugs, _ = detect_drugs_in_text(user_input)
             if mentioned_drugs:
                 extra_docs = fetch_drug_documents(mentioned_drugs)
                 if extra_docs:
-                    self.state._cached_context = self.state._cached_context + "\n\n" + extra_docs
+                    self.state._cached_context += "\n\n" + extra_docs
                     print(f"[context 보강] 추가된 약: {mentioned_drugs}")
 
-            response = self.rag_chain.invoke({
-                "context": self.state._cached_context,
-                "question": user_input,
-                "chat_history": history,
-            })
-            self.state.add_turn(user_input, response)
-            # 최종 추천이 나오면 흐름 A 종료
-            if is_final_recommendation(response):
-                self.state._in_flow_a_clarify = False
-            return response
+        response = self.rag_chain.invoke({
+            "context": self.state._cached_context,
+            "question": user_input,
+            "chat_history": self.state.get_history(),
+        })
+        self.state.add_turn(user_input, response)
+        # 첫 턴에서 바로 최종 답변이 나온 경우 (정보가 충분했던 케이스)
+        # 최종 추천이 나오면 흐름 A 종료
+        if is_final_recommendation(response):
+            self.state._in_flow_a_clarify = False
+        return response
 
+    def chat(self, user_input: str) -> str:
+        if self.state._in_flow_a_clarify:
+            return self._flow_a_reply(user_input, first_turn=False)
         # 흐름 B 역질문 진행.
         if self._pending_subject:
             if self._pending_subject == "나이":
@@ -295,21 +300,7 @@ class MedicalChatbot:
         # 플래그를 ON -> 이후 사용자 답변은 흐름 A 역질문 응답으로 처리
         # 비교 질문은 SYSTEM_PROMPT 8번 규칙에 따라 역질문 없이 즉시 답변됨
         if self.state.query_type in ("symptom_only", "comparison"):
-            context = retriever_multi(user_input)
-            self.state._cached_context = context
-            self.state._in_flow_a_clarify = True
-
-            response = self.rag_chain.invoke({
-                    "context" : context,
-                    "question": user_input,
-                    "chat_history": self.state.get_history(),
-            })
-            self.state.add_turn(user_input, response)
-            # 첫 턴에서 바로 최종 답변이 나온 경우 (정보가 충분했던 케이스)
-            if is_final_recommendation(response):
-                self.state._in_flow_a_clarify = False
-            return response
-
+            return self._flow_a_reply(user_input, first_turn=True)
 
         # 흐름 B : 질문에 약 이름이 포함되어 있음 => 주의사항 기반 역질문
         if self.state.query_type == "medication":
