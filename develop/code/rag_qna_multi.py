@@ -63,19 +63,6 @@ else:
 # 2. LLM 설정
 llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
 
-SAFETY_SLOTS = [
-{
-"subject":  "임산부/수유부",
-"question": "혹시 임산부이시거나 수유 중이신가요?",
-"reason":   "임산부/수유부에게 복용 금지인 약이 있을 수 있어요",
-},
-{
-"subject":  "나이",
-"question": "혹시 12세 미만 소아가 복용할 예정인가요?",
-"reason":   "소아에게 복용 금지인 약이 있을 수 있어요",
-},
-]
-
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
     ("system", EXPAND_SYSTEM_PROMPT),
