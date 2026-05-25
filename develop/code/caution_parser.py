@@ -58,6 +58,8 @@ PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 �
 
 LACTOSE_PATTERN = re.compile(r"갈락토오스\s*불내성|유당\s*분해효소\s*결핍|젖당\s*분해효소\s*결핍|포도당.갈락토오스\s*흡수장애|유당불내증|젖당불내증")
 
+HYPERSENSITIVITY_PATTERN = re.compile(r"과민증|과민반응")
+
 PREG_MERGED_SLOT = {
     "subject": "임산부/수유부",
     "question": "혹시 임산부이시거나 수유 중이신가요?",
@@ -142,6 +144,8 @@ def _get_subject_pattern(subject: str) -> re.Pattern:
         return PREG_PATTERN
     if subject == "유당불내증":
         return LACTOSE_PATTERN
+    if subject == "과민증 환자":
+        return HYPERSENSITIVITY_PATTERN
     for _, pattern in PRIORITY_RULES:
         if pattern.search(subject):
             return pattern

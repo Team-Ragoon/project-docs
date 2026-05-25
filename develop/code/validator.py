@@ -95,8 +95,8 @@ class SlotValidator:
         for c in self.get_contraindications(drug_names):
             subject = c["subject"]
 
-            # 이미 답변된 슬롯 스킵
-            if filled.get(subject) is not None:
+            # 이미 답변된 슬롯 스킵 (None 포함 - "모름" 응답도 답변 완료로 처리)
+            if subject in filled:
                 continue
 
             # can_drugs 필터: applicable_drugs 중 can_drugs에 남아있는 약이 없으면 스킵

@@ -92,9 +92,10 @@ class DialogueState:
                     self.extra_context[subject] = value
 
 
-    # 역질문에 대한 응답을 저장. 
-    # (해당 함수 호출 전에 긍정/부정 응답 판단을 위한 함수인 parse_yes_no 호출한 상태 -> parse_yes_no가 반환한 bool 타입 값을 저장.)
-    def record_clarify_answer(self, subject: str, is_positive: bool):
+    # 역질문에 대한 응답을 저장.
+    # (해당 함수 호출 전에 긍정/부정 응답 판단을 위한 함수인 parse_yes_no 호출한 상태 -> parse_yes_no가 반환한 bool|None 타입 값을 저장.)
+    # None = 사용자가 모른다고 답한 경우 (금기 아님으로 취급하되 unchecked_cautions에 포함)
+    def record_clarify_answer(self, subject: str, is_positive: bool | None):
         self.caution_slots[subject] = is_positive
         #print(f"[record_clarify_answer] {subject}: {is_positive}")
     

@@ -204,8 +204,8 @@ class MedicalChatbot:
                     )
                     self.state.caution_slots["나이"] = is_contraindicated
                 else:
-                    # 나이를 전혀 파악할 수 없는 경우: 금기 없음으로 처리 (재질문 없음)
-                    self.state.caution_slots["나이"] = False
+                    # 나이를 전혀 파악할 수 없는 경우: 모름으로 처리 (재질문 없음, unchecked에 포함)
+                    self.state.caution_slots["나이"] = None
             else:
                 # 나이 외 슬롯: 기존 yes/no 판단
                 is_positive = parse_yes_no(
@@ -384,7 +384,7 @@ class MedicalChatbot:
     def _build_user_profile(self) -> str:
         lines = []
         for subject, value in self.state.caution_slots.items():
-            status = "해당" if value else "해당 없음"
+            status = "해당" if value is True else "해당 없음" if value is False else "확인 불가"
             lines.append(f"-{subject} : {status}")
         return "\n".join(lines) if lines else "- 특이사항 없음"
     

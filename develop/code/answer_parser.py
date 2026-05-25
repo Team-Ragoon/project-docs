@@ -5,17 +5,23 @@ from prompts.system_prompt import AGE_PARSE_SYSTEM_PROMPT
 
 POSITIVE_KEYWORDS = ["예", "네", "맞아", "있어", "있음", "해당", "그렇", "맞습니다", "맞아요", "그래", "응"]
 NEGATIVE_KEYWORDS = ["아니", "없어", "없음", "아님", "안 해당", "아닙니다", "아니에요", "아니요"]
+UNKNOWN_KEYWORDS = ["모르겠", "잘 모르", "모름", "몰라", "모릅니다", "잘 몰라"]
 
 
-# LLM 기반 긍정/부정 판단 prompt
+# LLM 기반 긍정/부정/모름 판단 prompt
 _PARSE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """사용자의 응답이 긍정인지 부정인지 판단해 JSON으로만 응답하세요.
+    ("system", """사용자의 응답이 긍정인지, 부정인지, 또는 모름인지 판단해 JSON으로만 응답하세요.
 
-{{"is_positive": true | false}}
+{{"is_positive": true | false | null}}
+
+- 명확히 긍정 → true
+- 명확히 부정 → false
+- 모르겠다, 잘 모르겠다, 불확실 → null
 
 예시:
 - "네, 맞아요" → true
 - "아니요" → false
+- "잘 모르겠어요" → null
 - "네, 저는 임산부가 아니에요" → false  (문맥상 부정)
 - "ㅇㅇ" -> true
 - "ㄴㄴ" -> false
@@ -30,21 +36,26 @@ _AGE_PARSE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-# 사용자의 응답의 긍정/부정 판단. (1차: 규칙 기반) -> (2차: LLM 판단)
-def parse_yes_no(user_input: str, question: str, llm: ChatOpenAI, subject: str = "") -> bool:
+# 사용자의 응답의 긍정/부정/모름 판단. (1차: 규칙 기반) -> (2차: LLM 판단)
+# 반환값: True(긍정), False(부정), None(모름/불확실)
+def parse_yes_no(user_input: str, question: str, llm: ChatOpenAI, subject: str = "") -> bool | None:
     # 1차: 규칙 기반 (명확한 경우 LLM 호출 없이 처리)
     has_positive = any(k in user_input for k in POSITIVE_KEYWORDS)
     has_negative = any(k in user_input for k in NEGATIVE_KEYWORDS)
+    has_unknown = any(k in user_input for k in UNKNOWN_KEYWORDS)
 
     if has_negative and not has_positive:
         return False
     if has_positive and not has_negative:
         return True
+    if has_unknown and not has_positive and not has_negative:
+        return None
 
     # 2차: 긍정/부정이 섞이거나 모호한 경우 LLM 판단
     chain = _PARSE_PROMPT | llm | JsonOutputParser()
     result = chain.invoke({"question": question, "user_input": user_input})
-    return result.get("is_positive", False)
+    is_pos = result.get("is_positive")
+    return None if is_pos is None else bool(is_pos)
 
 
 # 나이 역질문에 대한 사용자 응답에서 나이(세)를 추출.
