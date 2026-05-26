@@ -16,7 +16,7 @@ LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 
 class SlotValidator:
-    MAX_CLARIFY = 3 # 역질문 횟수
+    MAX_CLARIFY = 2 # 역질문 횟수
 
     def __init__(self, llm : ChatOpenAI):
         self.llm = llm
