@@ -1,6 +1,6 @@
 import React from 'react';
 import MessageList from './MessageList';
-import { ChatMessage } from '../types';
+import { ChatMessage, ClarifyAnswer } from '../types';
 import styles from '../styles/Chat.module.css';
 
 interface ChatWindowProps {
@@ -10,6 +10,10 @@ interface ChatWindowProps {
   bottomRef: React.RefObject<HTMLDivElement>;
   onExampleClick: (example: string) => void;
   examplesDisabled?: boolean;
+  showYesNoButtons?: boolean;
+  pendingSubject?: string | null;
+  onYesNoSelect?: (answer: ClarifyAnswer) => void;
+  yesNoDisabled?: boolean;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -19,6 +23,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   bottomRef,
   onExampleClick,
   examplesDisabled,
+  showYesNoButtons,
+  pendingSubject,
+  onYesNoSelect,
+  yesNoDisabled,
 }) => {
   return (
     <main className={styles.chatWindow}>
@@ -29,6 +37,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         bottomRef={bottomRef}
         onExampleClick={onExampleClick}
         examplesDisabled={examplesDisabled}
+        showYesNoButtons={showYesNoButtons}
+        pendingSubject={pendingSubject}
+        onYesNoSelect={onYesNoSelect}
+        yesNoDisabled={yesNoDisabled}
       />
     </main>
   );
