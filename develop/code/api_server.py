@@ -7,6 +7,10 @@ from __future__ import annotations
 
 import re
 import uuid
+
+from stdio_utf8 import configure_stdio_utf8
+
+configure_stdio_utf8()
 from typing import Any, Literal
 
 # 예/아니요, 네/아니요, (예/아니요로 답해주세요) 등 질문 내 안내 문구

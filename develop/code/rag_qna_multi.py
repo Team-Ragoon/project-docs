@@ -25,8 +25,10 @@ from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
 from medication_loader import get_drug_info
+from stdio_utf8 import configure_stdio_utf8
 
 load_dotenv()
+configure_stdio_utf8()
 
 
 # 1. ChromaDB 로드

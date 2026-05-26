@@ -5,7 +5,7 @@
   "scripts": {
     "prestart": "cd ../code && pip install -r requirements-api.txt -q",
     "start": "concurrently -k \"npm run start:api\" \"npm run start:web\"",
-    "start:api": "cd ../code && python api_server.py",
+    "start:api": "cd ../code && cross-env PYTHONUTF8=1 python -X utf8 api_server.py",
     "start:web": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
@@ -21,7 +21,8 @@
   "devDependencies": {
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3"
   },
   "browserslist": {
     "production": [
