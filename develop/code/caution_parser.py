@@ -84,13 +84,14 @@ LACTOSE_MERGED_SLOT = {
 
 # 금기 텍스트에서 "N세/개월 미만·이하" 기준 나이(세) 추출.
 # "65세 이상 고령자" 등 미만/이하가 없는 표현은 의도적으로 무시.
-def _extract_age_threshold(text: str) -> float | None:
+# 반환값: {"age": float, "inclusive": bool} (이하=True, 미만=False) 또는 None
+def _extract_age_threshold(text: str) -> dict | None:
     year_match = re.search(r"(\d+)\s*세\s*(미만|이하)", text)
     if year_match:
-        return float(year_match.group(1))
+        return {"age": float(year_match.group(1)), "inclusive": year_match.group(2) == "이하"}
     month_match = re.search(r"(\d+)\s*개월\s*(미만|이하)", text)
     if month_match:
-        return int(month_match.group(1)) / 12
+        return {"age": int(month_match.group(1)) / 12, "inclusive": month_match.group(2) == "이하"}
     return None
 
 
