@@ -11,7 +11,8 @@ CHILD_AGE_PATTERN = re.compile(
     r"|소아|영아|유아|젖먹이|신생아|영유아|어린이"
 )
 
-PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부")
+LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 
 class SlotValidator:
@@ -40,11 +41,16 @@ class SlotValidator:
         user_age = extra_context.get("나이")  # 직접 입력받은 숫자 나이
         is_child = extra_context.get("소아여부") is True
 
-        if PREG_PATTERN.search(subject) or subject == "임산부/수유부":
+        if subject in ("임산부", "수유부") or PREG_PATTERN.search(subject) or LACTATION_PATTERN.search(subject):
             if user_age is not None and user_age <= 10:
                 return True
             if is_child:
                 return True
+
+        if subject == "수유부" and filled.get("임산부") is True:
+            return True
+        if subject == "임산부" and filled.get("수유부") is True:
+            return True
 
         if subject == "알코올 복용자":
             if user_age is not None and user_age < 15:
@@ -81,7 +87,7 @@ class SlotValidator:
         for item in items:
             subject = item.get("subject", "")
             is_age  = subject == "나이"
-            is_preg = subject == "임산부/수유부"
+            is_preg = subject in ("임산부", "수유부")
             if is_age or is_preg:
                 insert_idx += 1
             else:

@@ -65,9 +65,14 @@ llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
 
 SAFETY_SLOTS = [
 {
-"subject":  "임산부/수유부",
-"question": "혹시 임산부이시거나 수유 중이신가요?",
-"reason":   "임산부/수유부에게 복용 금지인 약이 있을 수 있어요",
+"subject":  "임산부",
+"question": "혹시 임산부이시거나 임신 가능성이 있으신가요?",
+"reason":   "임산부에게 복용 금지인 약이 있을 수 있어요",
+},
+{
+"subject":  "수유부",
+"question": "혹시 수유 중이신가요?",
+"reason":   "수유부에게 복용 금지인 약이 있을 수 있어요",
 },
 {
 "subject":  "나이",
@@ -192,20 +197,21 @@ class MedicalChatbot:
         # 흐름 B 역질문 진행.
         if self._pending_subject:
             if self._pending_subject == "나이":
-                # 나이는 숫자로 추출 후 extra_context에 저장, caution_slots는 약별 threshold로 결정
+                # 나이는 숫자로 추출 후 extra_context에 저장
+                # 나이 금기 슬롯이 있을 때만 caution_slots에도 저장
+                # 금기 슬롯이 없는 경우(제형 구분 목적)는 extra_context만 사용
                 age = parse_age(user_input, llm)
+                contraindications = self.validator.get_contraindications(self.state.drug_names)
+                age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
                 if age is not None:
                     self.state.extra_context["나이"] = age
-                    contraindications = self.validator.get_contraindications(self.state.drug_names)
-                    age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
-                    is_contraindicated = (
-                        age_slot is not None
-                        and any(age < t for t in age_slot.get("age_thresholds", {}).values())
-                    )
-                    self.state.caution_slots["나이"] = is_contraindicated
+                    if age_slot is not None:
+                        is_contraindicated = any(age < t for t in age_slot.get("age_thresholds", {}).values())
+                        self.state.caution_slots["나이"] = is_contraindicated
                 else:
-                    # 나이를 전혀 파악할 수 없는 경우: 모름으로 처리 (재질문 없음, unchecked에 포함)
-                    self.state.caution_slots["나이"] = None
+                    # 나이를 전혀 파악할 수 없는 경우: 나이 금기 슬롯이 있을 때만 모름으로 처리
+                    if age_slot is not None:
+                        self.state.caution_slots["나이"] = None
             else:
                 # 나이 외 슬롯: 기존 yes/no 판단
                 is_positive = parse_yes_no(
@@ -339,6 +345,15 @@ class MedicalChatbot:
         모든 슬롯이 채워졌으면 최종 답변 생성
         역질문 응답 처리 후 / medication 진입 시 공통 호출
         """
+        # 나이 선행 질문: caution 슬롯 여부와 무관하게 항상 나이를 먼저 확인
+        # 어린이/성인 제형 구분 및 연령별 금기 자동 처리에 필요
+        # 숫자 나이가 이미 추출된 경우에만 건너뜀 (소아여부만 있는 경우는 질문)
+        if "나이" not in self.state.extra_context:
+            question = "복용하실 분의 정확한 나이를 알려주세요. (예: 7세, 30세)"
+            self._pending_subject = "나이"
+            self._pending_question = question
+            return question  # clarify_count 증가 없음 — 필수 선행 질문
+
         # 현재까지 True인 슬롯 기준으로 복용 가능한 약 먼저 계산
         applicable_subjects = {s for s, v in self.state.caution_slots.items() if v is True}
         can_drugs = (

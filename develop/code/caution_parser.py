@@ -22,28 +22,30 @@ PRIORITY_RULES = [
     (1, re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)"
                    r"|소아|영아|유아|젖먹이|신생아|영유아|어린이"
                    r"|\b나이\b")),
-    # 우선순위 2: 임부/임산부/수유부 (알코올보다 우선)
-    (2, re.compile(r"임부|임신 가능성|임산부|수유부|수유 중|임산부/수유부")),
-    # 우선순위 3: 알코올
-    (3, re.compile(r"알코올|음주|\b술\b")),
-     # 우선순위 4: 해열진통제 복용자
-    (4, re.compile(r"해열진통제")),   
-    # 우선순위 5: MAO 억제제
-    (5, re.compile(r"MAO\s*억제제|모노아민\s*산화효소|항우울제|항정신병")),    
-    # 우선순위 6: 불내성·결핍증·흡수장애 
-    (6, re.compile(r"불내성|결핍증|흡수장애")),
-    # 우선순위 7: 간장애
-    (7, re.compile(r"간장애")),
-    # 우선순위 8: 신장 관련
-    (8, re.compile(r"신장|신부전|신장애")),
-    # 우선순위 9: 심장/혈압 관련
-    (9, re.compile(r"심장|고혈압|혈압|심부전")),
-    # 우선순위 10: 위장 관련
-    (10, re.compile(r"위장|궤양|출혈")),
-    # 우선순위 11: 항암 관련
-    (11, re.compile(r"항암|메토트렉세이트")),
-    # 우선순위 12: 수술 관련
-    (12, re.compile(r"수술|우회로")),
+    # 우선순위 2: 임산부
+    (2, re.compile(r"임부|임신\s*가능성|임산부")),
+    # 우선순위 3: 수유부
+    (3, re.compile(r"수유부|수유\s*중")),
+    # 우선순위 4: 알코올
+    (4, re.compile(r"알코올|음주|\b술\b")),
+    # 우선순위 5: 해열진통제 복용자
+    (5, re.compile(r"해열진통제")),
+    # 우선순위 6: MAO 억제제
+    (6, re.compile(r"MAO\s*억제제|모노아민\s*산화효소|항우울제|항정신병")),
+    # 우선순위 7: 불내성·결핍증·흡수장애
+    (7, re.compile(r"불내성|결핍증|흡수장애")),
+    # 우선순위 8: 간장애
+    (8, re.compile(r"간장애")),
+    # 우선순위 9: 신장 관련
+    (9, re.compile(r"신장|신부전|신장애")),
+    # 우선순위 10: 심장/혈압 관련
+    (10, re.compile(r"심장|고혈압|혈압|심부전")),
+    # 우선순위 11: 위장 관련
+    (11, re.compile(r"위장|궤양|출혈")),
+    # 우선순위 12: 항암 관련
+    (12, re.compile(r"항암|메토트렉세이트")),
+    # 우선순위 13: 수술 관련
+    (13, re.compile(r"수술|우회로")),
 ]
 
 # 아세트아미노펜 최대 용량 슬롯 (validator에서 동적 삽입)
@@ -55,16 +57,23 @@ ACETAMINOPHEN_SLOT = {
 
 AGE_PATTERN = re.compile(r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|영아|유아|젖먹이|신생아|영유아|어린이|^나이$")
 
-PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부")
+LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 LACTOSE_PATTERN = re.compile(r"갈락토오스\s*불내성|유당\s*분해효소\s*결핍|젖당\s*분해효소\s*결핍|포도당.갈락토오스\s*흡수장애|유당불내증|젖당불내증")
 
 HYPERSENSITIVITY_PATTERN = re.compile(r"과민증|과민반응")
 
-PREG_MERGED_SLOT = {
-    "subject": "임산부/수유부",
-    "question": "혹시 임산부이시거나 수유 중이신가요?",
-    "reason": "태아 또는 모유를 통해 아기에게 영향을 줄 수 있음",
+PREG_SLOT = {
+    "subject": "임산부",
+    "question": "혹시 임산부이시거나 임신 가능성이 있으신가요?",
+    "reason": "태아에 영향을 줄 수 있음",
+}
+
+LACTATION_SLOT = {
+    "subject": "수유부",
+    "question": "혹시 수유 중이신가요?",
+    "reason": "모유를 통해 아기에게 영향을 줄 수 있음",
 }
 
 LACTOSE_MERGED_SLOT = {
@@ -89,7 +98,9 @@ def _normalize_subject(subject: str, item: dict) -> tuple[str, dict]:
     if AGE_PATTERN.search(subject):
         return "나이", item
     elif PREG_PATTERN.search(subject):
-        return "임산부/수유부", {**item, **PREG_MERGED_SLOT}
+        return "임산부", {**item, **PREG_SLOT}
+    elif LACTATION_PATTERN.search(subject):
+        return "수유부", {**item, **LACTATION_SLOT}
     elif LACTOSE_PATTERN.search(subject):
         return "유당불내증", {**item, **LACTOSE_MERGED_SLOT}
     return subject, item
@@ -141,8 +152,10 @@ _cache: dict[str, tuple[dict, ...]] = {}
 def _get_subject_pattern(subject: str) -> re.Pattern:
     if subject == "나이":
         return AGE_PATTERN
-    if subject == "임산부/수유부":
+    if subject == "임산부":
         return PREG_PATTERN
+    if subject == "수유부":
+        return LACTATION_PATTERN
     if subject == "유당불내증":
         return LACTOSE_PATTERN
     if subject == "과민증 환자":

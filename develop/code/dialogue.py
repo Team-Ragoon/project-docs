@@ -5,7 +5,8 @@ AGE_PATTERN = re.compile(
     r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|영아|유아|젖먹이|신생아|영유아|어린이|^나이$"
 )
 
-PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부")
+LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 class DialogueState:
     def __init__(self):
@@ -25,7 +26,9 @@ class DialogueState:
         if AGE_PATTERN.search(subject):
             return "나이"
         elif PREG_PATTERN.search(subject):
-            return "임산부/수유부"
+            return "임산부"
+        elif LACTATION_PATTERN.search(subject):
+            return "수유부"
         return subject
     
 
