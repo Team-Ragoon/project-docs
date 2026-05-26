@@ -200,7 +200,10 @@ class MedicalChatbot:
                     age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
                     is_contraindicated = (
                         age_slot is not None
-                        and any(age < t for t in age_slot.get("age_thresholds", {}).values())
+                        and any(
+                            (age <= t["age"] if t["inclusive"] else age < t["age"])
+                            for t in age_slot.get("age_thresholds", {}).values()
+                        )
                     )
                     self.state.caution_slots["나이"] = is_contraindicated
                 else:
@@ -488,7 +491,7 @@ class MedicalChatbot:
             if subject == "나이" and user_age is not None:
                 # 약별 나이 기준으로 개별 판단 (합산 기준 아님)
                 for drug, threshold in c.get("age_thresholds", {}).items():
-                    if user_age < threshold:
+                    if user_age <= threshold["age"] if threshold["inclusive"] else user_age < threshold["age"]:
                         excluded.add(drug)
             else:
                 excluded.update(c.get("applicable_drugs", self.state.drug_names))

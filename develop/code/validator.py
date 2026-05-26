@@ -121,7 +121,10 @@ class SlotValidator:
                 age_thresholds = c.get("age_thresholds", {})
                 if age_thresholds:
                     # 약별 기준 나이 중 하나라도 미만이면 True(금기 약 존재)
-                    filled["나이"] = any(user_age < t for t in age_thresholds.values())
+                    filled["나이"] = any(
+                        (user_age <= t["age"] if t["inclusive"] else user_age < t["age"])
+                        for t in age_thresholds.values()
+                    )
                 else:
                     # age_thresholds 없는 경우 question 텍스트에서 threshold 추출 (fallback)
                     threshold = self._get_age_threshold(c["question"])
