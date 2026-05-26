@@ -24,7 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
-from medication_loader import get_drug_info
+from medication_loader import get_drug_info, is_acetaminophen_only
 
 load_dotenv()
 
@@ -301,13 +301,6 @@ class MedicalChatbot:
                 #미리 채워진 슬롯 수만큼 clarify_count 차감
                 self.state.clarify_count += len(self.state.caution_slots)
 
-                # 나이 자동 처리분 추가 차감
-                _, auto_filled = self.validator.get_missing_slots(
-                    self.state.drug_names,
-                    self.state.caution_slots,
-                    self.state.extra_context,
-                )
-                self.state.clarify_count += auto_filled
 
             # 확인용 출력-----------------------------------------
             print(f"[caution_slots] {self.state.caution_slots}")
@@ -582,7 +575,19 @@ class MedicalChatbot:
 
         can_drugs = self._get_remaining_candidates(applicable_subjects) if applicable_subjects else drug_names
 
-         # 복용 가능한 약이 없는 경우 → 전체 복용 불가
+        # 임산부 guard: extra_context에서 임산부 확인 시 아세트아미노펜 단일 성분 약만 허용
+        if self.state.extra_context.get("임산부") is True:
+            safe_drugs = [d for d in can_drugs if is_acetaminophen_only(d)]
+            if not safe_drugs:
+                answer = self.cannot_recommend.invoke({
+                    "drug_keyword": drug_keyword,
+                    "user_profile": user_profile,
+                    "applicable_cautions": "- 임산부: 후보 약이 모두 복합 성분으로, 임산부에게는 아세트아미노펜 단일 성분 약만 권장됩니다.",
+                })
+                return f"{summary}\n\n{answer}"
+            can_drugs = safe_drugs
+
+        # 복용 가능한 약이 없는 경우 → 전체 복용 불가
         if not can_drugs or (applicable and set(can_drugs) == set(drug_names)):
             answer = self.cannot_recommend.invoke({
                 "drug_keyword": drug_keyword,

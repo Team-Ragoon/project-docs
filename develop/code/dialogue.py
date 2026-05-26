@@ -90,6 +90,8 @@ class DialogueState:
             if normalized in caution_subjects:
                 if normalized not in self.caution_slots:
                     self.caution_slots[normalized] = value
+                if normalized == "임산부":
+                    self.extra_context["임산부"] = value
             else:
                 if subject not in self.extra_context:
                     self.extra_context[subject] = value
@@ -100,6 +102,8 @@ class DialogueState:
     # None = 사용자가 모른다고 답한 경우 (금기 아님으로 취급하되 unchecked_cautions에 포함)
     def record_clarify_answer(self, subject: str, is_positive: bool | None):
         self.caution_slots[subject] = is_positive
+        if subject == "임산부":
+            self.extra_context["임산부"] = is_positive
         #print(f"[record_clarify_answer] {subject}: {is_positive}")
     
 

@@ -54,5 +54,13 @@ def has_acetaminophen(drug_names: list[str]) -> bool:
             return True
     return False
 
+def is_acetaminophen_only(drug_name: str) -> bool:
+    drug = _find_drug(drug_name)
+    if not drug:
+        return False
+    ingredient = drug.get("ingredient_api") or ""
+    ingredients = {i.strip() for i in ingredient.split(",") if i.strip()}
+    return ingredients == {"아세트아미노펜"}
+
 def get_drug_info(drug_name: str) -> dict | None:
-    return _find_drug(drug_name) 
+    return _find_drug(drug_name)

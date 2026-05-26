@@ -35,21 +35,21 @@ class SlotValidator:
         return None
 
     # 나이 기반 역질문 스킵 규칙:
-    # - 임산부/수유부: 입력 나이 10세 이하 또는 소아여부 확인 시 스킵
+    # - 임산부/수유부: 입력 나이 15세 이하 또는 소아여부 확인 시 스킵
     # - 알코올 복용자: 입력 나이 15세 미만 또는 소아여부 확인 시 스킵
     def _should_skip(self, subject: str, filled: dict, extra_context: dict = {}) -> bool:
         user_age = extra_context.get("나이")  # 직접 입력받은 숫자 나이
         is_child = extra_context.get("소아여부") is True
 
         if subject in ("임산부", "수유부") or PREG_PATTERN.search(subject) or LACTATION_PATTERN.search(subject):
-            if user_age is not None and user_age <= 10:
+            if user_age is not None and user_age < 15:
                 return True
             if is_child:
                 return True
 
-        if subject == "수유부" and filled.get("임산부") is True:
+        if subject == "수유부" and (filled.get("임산부") is True or extra_context.get("임산부") is True):
             return True
-        if subject == "임산부" and filled.get("수유부") is True:
+        if subject == "임산부" and (filled.get("수유부") is True or extra_context.get("수유부") is True):
             return True
 
         if subject == "알코올 복용자":
