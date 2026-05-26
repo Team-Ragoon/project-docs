@@ -232,11 +232,14 @@ code/
 └── build_documents.py
 ```
 
-## 리엑트 실행
-```cd develop/code
-pip install -r requirements-api.txt
-python api_server.py
+## 리액트 실행
+
+Python 패키지 설치(`pip install`)와 API 서버(`api_server.py`)는 `npm start`가 자동으로 처리합니다.
+
+```bash
+cd develop/front
+npm install   # 최초 1회만 (Node 패키지)
+npm start
 ```
 
-- 브라우저 내에서 http://localhost:8000/api/health 열고 ok 가 나오면 API on.
-- cd develop/front로 이동해 npm start 진행해주세요.
+- API http://localhost:8000 · React http://localhost:3000
