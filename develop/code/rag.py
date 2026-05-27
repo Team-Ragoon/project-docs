@@ -2,12 +2,12 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from prompts.system_prompt import (
-    SYSTEM_PROMPT, FEW_SHOT_EXAMPLES,
+    SYSTEM_PROMPT,
     SUMMARIZE_HUMAN_PROMPT, SUMMARIZE_SYSTEM_PROMPT,
     RECOMMEND_FINAL_HUMAN_PROMPT, RECOMMEND_FINAL_SYSTEM_PROMPT,
     CANNOT_RECOMMEND_SYSTEM_PROMPT, CANNOT_RECOMMEND_HUMAN_PROMPT,
-    RAG_HUMAN_PROMPT
-    )
+    RAG_HUMAN_PROMPT,
+)
 
 
 # RAG 기반 QnA chain -> 사용자의 입력에 따라 약을 "추천"할 때 사용하는 chain

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendChatMessage, checkHealth } from '../services/api';
-import { ChatMessage } from '../types';
+import { AnswerMode, ChatMessage } from '../types';
 
 const createId = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -9,6 +9,7 @@ export const useRagChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [pendingSubject, setPendingSubject] = useState<string | null>(null);
+  const [answerMode, setAnswerMode] = useState<AnswerMode | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -54,6 +55,7 @@ export const useRagChat = () => {
       };
 
       setMessages((prev) => [...prev, userMessage]);
+      setAnswerMode(null);
       setLoading(true);
       setError(null);
 
@@ -61,6 +63,7 @@ export const useRagChat = () => {
         const data = await sendChatMessage(trimmed, sessionId);
         setSessionId(data.session_id);
         setPendingSubject(data.pending_subject);
+        setAnswerMode(data.answer_mode ?? null);
 
         const assistantMessage: ChatMessage = {
           id: createId(),
@@ -86,6 +89,7 @@ export const useRagChat = () => {
     setMessages([]);
     setSessionId(null);
     setPendingSubject(null);
+    setAnswerMode(null);
     setError(null);
   }, []);
 
@@ -94,6 +98,7 @@ export const useRagChat = () => {
     loading,
     error,
     pendingSubject,
+    answerMode,
     apiOnline,
     sendMessage,
     startNewChat,

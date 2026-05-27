@@ -12,6 +12,7 @@ const App: React.FC = () => {
     loading,
     error,
     pendingSubject,
+    answerMode,
     apiOnline,
     sendMessage,
     startNewChat,
@@ -28,11 +29,16 @@ const App: React.FC = () => {
         bottomRef={bottomRef}
         onExampleClick={sendMessage}
         examplesDisabled={loading || apiOnline === false}
+        showYesNoButtons={answerMode === 'yes_no'}
+        pendingSubject={pendingSubject}
+        onYesNoSelect={sendMessage}
+        yesNoDisabled={loading || apiOnline === false}
       />
       <ChatInput
         onSend={sendMessage}
-        disabled={loading || apiOnline === false}
+        disabled={loading || apiOnline === false || answerMode === 'yes_no'}
         pendingSubject={pendingSubject}
+        answerMode={answerMode}
       />
     </div>
   );
