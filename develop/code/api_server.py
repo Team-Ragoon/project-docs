@@ -5,8 +5,18 @@ React 프론트에서 rag_qna_multi.MedicalChatbot 과 동일한 대화 흐름 �
 
 from __future__ import annotations
 
+import re
 import uuid
-from typing import Any
+
+from stdio_utf8 import configure_stdio_utf8
+
+configure_stdio_utf8()
+from typing import Any, Literal
+
+# 예/아니요, 네/아니요, (예/아니요로 답해주세요) 등 질문 내 안내 문구
+_YES_NO_HINT = re.compile(r"(?:예|네)\s*/\s*아니[요](?:\s*로)?", re.I)
+
+AnswerMode = Literal["yes_no"]
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +52,18 @@ def _get_bot(session_id: str):
     return _sessions[session_id]
 
 
+def _answer_mode(bot, reply: str) -> AnswerMode | None:
+    if not _YES_NO_HINT.search(reply):
+        return None
+    from rag_qna_multi import is_final_recommendation
+
+    if is_final_recommendation(reply):
+        return None
+    if bot._pending_subject or bot.state._in_flow_a_clarify:
+        return "yes_no"
+    return None
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
@@ -51,6 +73,7 @@ class ChatResponse(BaseModel):
     session_id: str
     reply: str
     pending_subject: str | None = None
+    answer_mode: AnswerMode | None = None
 
 
 class SessionResponse(BaseModel):
@@ -95,6 +118,7 @@ def chat(body: ChatRequest):
         session_id=session_id,
         reply=reply,
         pending_subject=pending,
+        answer_mode=_answer_mode(bot, reply),
     )
 
 

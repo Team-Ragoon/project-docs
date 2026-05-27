@@ -10,6 +10,7 @@ LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 class DialogueState:
     def __init__(self):
+        # --- 공용 (A/B 라우팅, 흐름 B 슬롯) ---
         self.query_type: str | None = None # 현재 query가 증상만 있는지(symptom_only) / 약 이름이 포함되는지(medication)
         self.symptom : str | None = None # query에서 추출한 증상
         self.drug_names : list[str] = [] # DB 후보 약 목록(검색용 - 예를 들어, 콜대원콜드에스시럽, 콜대원키즈이부펜시럽..)
@@ -17,11 +18,17 @@ class DialogueState:
         self.caution_slots : dict = {} # 금기 사항에 대한 사용자의 정보
         self.extra_context: dict = {}  # query에서 금기 사항에 해당하지는 않지만 사용자의 증상에 해당하는 text
         self.clarify_count : int = 0 # 역질문 횟수
-        self._history : list = [] # 흐름 A에서 사용자의 history 저장을 위해 사용.
-        self._cached_context : str = "" # 흐름 A 첫 턴의 retrieval 결과를 역질문 중에 재사용
-        self._in_flow_a_clarify : bool = False # 흐름 A 역질문 진행 중 여부 (패턴 매칭보다 안전)
 
-    
+        # --- 흐름 A 전용 ---
+        self._history : list = [] #사용자의 history 저장을 위해 사용.
+        self._cached_context : str = "" #첫 턴의 retrieval 결과를 역질문 중에 재사용
+        self._in_flow_a_clarify : bool = False #역질문 진행 중 여부 (패턴 매칭보다 안전)
+
+    def _reset_flow_a(self):
+        self._history = []
+        self._cached_context = ""
+        self._in_flow_a_clarify = False
+
     def _normalize_subject(self, subject: str) -> str:
         if AGE_PATTERN.search(subject):
             return "나이"
@@ -43,10 +50,8 @@ class DialogueState:
         self.caution_slots = {}
         self.extra_context = {}
         self.clarify_count = 0
-        self._history = []
-        self._cached_context = ""
-        self._in_flow_a_clarify = False
-    
+        self._reset_flow_a()
+
     
     # query에 대한 분석 후에 갱신을 위한 함수.
     # query_type, symptom은 매 turn마다(=query) 갱신.

@@ -204,12 +204,12 @@
 
 ## rag.py 체인 목록
 
-| 함수 | 용도 | 상태 |
+| 함수 | 용도 | 상태 | 흐름 |
 |------|------|------|
-| `build_rag_chain` | 증상 입력 → 바로 RAG 추천 | 사용 중 |
-| `build_recommend_final_chain` | 슬롯 완료 후 최종 추천 | 사용 중 |
-| `build_cannot_recommend_chain` | 복용 불가 시 이유 설명 | 사용 중 |
-| `build_summarize_chain` | 역질문 후 상황 요약 | 사용 중 |
+| `build_rag_chain` | 증상 입력 → 바로 RAG 추천 | 사용 중 | A |
+| `build_recommend_final_chain` | 슬롯 완료 후 최종 추천 | 사용 중 | B |
+| `build_cannot_recommend_chain` | 복용 불가 시 이유 설명 | 사용 중 | B |
+| `build_summarize_chain` | 역질문 후 상황 요약 | 사용 중 | B |
 
 
 ---
@@ -232,11 +232,14 @@ code/
 └── build_documents.py
 ```
 
-## 리엑트 실행
-```cd develop/code
-pip install -r requirements-api.txt
-python api_server.py
+## 리액트 실행
+
+Python 패키지 설치(`pip install`)와 API 서버(`api_server.py`)는 `npm start`가 자동으로 처리합니다.
+
+```bash
+cd develop/front
+npm install   # 최초 1회만 (Node 패키지)
+npm start
 ```
 
-- 브라우저 내에서 http://localhost:8000/api/health 열고 ok 가 나오면 API on.
-- cd develop/front로 이동해 npm start 진행해주세요.
+- API http://localhost:8000 · React http://localhost:3000
