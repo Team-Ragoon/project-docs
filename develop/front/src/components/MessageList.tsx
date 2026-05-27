@@ -1,7 +1,8 @@
 import React from 'react';
 import MessageItem from './MessageItem';
 import EmptyState from './EmptyState';
-import { ChatMessage } from '../types';
+import YesNoButtons from './YesNoButtons';
+import { ChatMessage, ClarifyAnswer } from '../types';
 import styles from '../styles/Chat.module.css';
 
 interface MessageListProps {
@@ -10,6 +11,10 @@ interface MessageListProps {
   bottomRef: React.RefObject<HTMLDivElement>;
   onExampleClick: (example: string) => void;
   examplesDisabled?: boolean;
+  showYesNoButtons?: boolean;
+  pendingSubject?: string | null;
+  onYesNoSelect?: (answer: ClarifyAnswer) => void;
+  yesNoDisabled?: boolean;
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -18,13 +23,31 @@ const MessageList: React.FC<MessageListProps> = ({
   bottomRef,
   onExampleClick,
   examplesDisabled,
+  showYesNoButtons,
+  pendingSubject,
+  onYesNoSelect,
+  yesNoDisabled,
 }) => {
+  const lastMessage = messages[messages.length - 1];
+  const showButtons =
+    showYesNoButtons &&
+    !loading &&
+    lastMessage?.role === 'assistant' &&
+    onYesNoSelect;
+
   return (
     <div className={styles.messageList}>
       {messages.length === 0 && !loading ? (
         <EmptyState onExampleClick={onExampleClick} disabled={examplesDisabled} />
       ) : (
         messages.map((message) => <MessageItem key={message.id} message={message} />)
+      )}
+      {showButtons && (
+        <YesNoButtons
+          onSelect={onYesNoSelect}
+          disabled={yesNoDisabled}
+          pendingSubject={pendingSubject}
+        />
       )}
       {loading && (
         <div className={styles.loadingRow}>
