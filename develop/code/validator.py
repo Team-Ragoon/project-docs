@@ -11,11 +11,12 @@ CHILD_AGE_PATTERN = re.compile(
     r"|소아|영아|유아|젖먹이|신생아|영유아|어린이"
 )
 
-PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부")
+LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 
 class SlotValidator:
-    MAX_CLARIFY = 3 # 역질문 횟수
+    MAX_CLARIFY = 2 # 역질문 횟수
 
     def __init__(self, llm : ChatOpenAI):
         self.llm = llm
@@ -34,17 +35,22 @@ class SlotValidator:
         return None
 
     # 나이 기반 역질문 스킵 규칙:
-    # - 임산부/수유부: 입력 나이 10세 이하 또는 소아여부 확인 시 스킵
+    # - 임산부/수유부: 입력 나이 15세 이하 또는 소아여부 확인 시 스킵
     # - 알코올 복용자: 입력 나이 15세 미만 또는 소아여부 확인 시 스킵
     def _should_skip(self, subject: str, filled: dict, extra_context: dict = {}) -> bool:
         user_age = extra_context.get("나이")  # 직접 입력받은 숫자 나이
         is_child = extra_context.get("소아여부") is True
 
-        if PREG_PATTERN.search(subject) or subject == "임산부/수유부":
-            if user_age is not None and user_age <= 10:
+        if subject in ("임산부", "수유부") or PREG_PATTERN.search(subject) or LACTATION_PATTERN.search(subject):
+            if user_age is not None and user_age < 15:
                 return True
             if is_child:
                 return True
+
+        if subject == "수유부" and (filled.get("임산부") is True or extra_context.get("임산부") is True):
+            return True
+        if subject == "임산부" and (filled.get("수유부") is True or extra_context.get("수유부") is True):
+            return True
 
         if subject == "알코올 복용자":
             if user_age is not None and user_age < 15:
@@ -81,7 +87,7 @@ class SlotValidator:
         for item in items:
             subject = item.get("subject", "")
             is_age  = subject == "나이"
-            is_preg = subject == "임산부/수유부"
+            is_preg = subject in ("임산부", "수유부")
             if is_age or is_preg:
                 insert_idx += 1
             else:
@@ -121,7 +127,10 @@ class SlotValidator:
                 age_thresholds = c.get("age_thresholds", {})
                 if age_thresholds:
                     # 약별 기준 나이 중 하나라도 미만이면 True(금기 약 존재)
-                    filled["나이"] = any(user_age < t for t in age_thresholds.values())
+                    filled["나이"] = any(
+                        (user_age <= t["age"] if t["inclusive"] else user_age < t["age"])
+                        for t in age_thresholds.values()
+                    )
                 else:
                     # age_thresholds 없는 경우 question 텍스트에서 threshold 추출 (fallback)
                     threshold = self._get_age_threshold(c["question"])

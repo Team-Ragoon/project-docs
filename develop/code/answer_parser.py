@@ -7,6 +7,10 @@ POSITIVE_KEYWORDS = ["예", "네", "맞아", "있어", "있음", "해당", "그�
 NEGATIVE_KEYWORDS = ["아니", "없어", "없음", "아님", "안 해당", "아닙니다", "아니에요", "아니요"]
 UNKNOWN_KEYWORDS = ["모르겠", "잘 모르", "모름", "몰라", "모릅니다", "잘 몰라"]
 
+# "안하고 있어", "하지 않아" 처럼 긍정 키워드를 포함하지만 실제로는 부정인 패턴
+# → 이 패턴이 매칭되면 긍정 키워드 무시하고 부정으로 처리
+NEGATION_OVERRIDES = ["안하고", "안 하고", "하지 않", "안해요", "안해", "안 해", "안 하", "안먹고", "안 먹고"]
+
 
 # LLM 기반 긍정/부정/모름 판단 prompt
 _PARSE_PROMPT = ChatPromptTemplate.from_messages([
@@ -40,8 +44,9 @@ _AGE_PARSE_PROMPT = ChatPromptTemplate.from_messages([
 # 반환값: True(긍정), False(부정), None(모름/불확실)
 def parse_yes_no(user_input: str, question: str, llm: ChatOpenAI, subject: str = "") -> bool | None:
     # 1차: 규칙 기반 (명확한 경우 LLM 호출 없이 처리)
-    has_positive = any(k in user_input for k in POSITIVE_KEYWORDS)
-    has_negative = any(k in user_input for k in NEGATIVE_KEYWORDS)
+    has_override = any(k in user_input for k in NEGATION_OVERRIDES)
+    has_positive = any(k in user_input for k in POSITIVE_KEYWORDS) and not has_override
+    has_negative = any(k in user_input for k in NEGATIVE_KEYWORDS) or has_override
     has_unknown = any(k in user_input for k in UNKNOWN_KEYWORDS)
 
     if has_negative and not has_positive:

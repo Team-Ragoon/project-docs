@@ -5,7 +5,8 @@ AGE_PATTERN = re.compile(
     r"(만\s*)?\d+\s*(개월|세)\s*(미만|이하)|소아|영아|유아|젖먹이|신생아|영유아|어린이|^나이$"
 )
 
-PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부|수유부|수유 중")
+PREG_PATTERN = re.compile(r"임부|임신 가능성|임산부")
+LACTATION_PATTERN = re.compile(r"수유부|수유 중")
 
 class DialogueState:
     def __init__(self):
@@ -32,7 +33,9 @@ class DialogueState:
         if AGE_PATTERN.search(subject):
             return "나이"
         elif PREG_PATTERN.search(subject):
-            return "임산부/수유부"
+            return "임산부"
+        elif LACTATION_PATTERN.search(subject):
+            return "수유부"
         return subject
     
 
@@ -92,6 +95,8 @@ class DialogueState:
             if normalized in caution_subjects:
                 if normalized not in self.caution_slots:
                     self.caution_slots[normalized] = value
+                if normalized == "임산부":
+                    self.extra_context["임산부"] = value
             else:
                 if subject not in self.extra_context:
                     self.extra_context[subject] = value
@@ -102,6 +107,8 @@ class DialogueState:
     # None = 사용자가 모른다고 답한 경우 (금기 아님으로 취급하되 unchecked_cautions에 포함)
     def record_clarify_answer(self, subject: str, is_positive: bool | None):
         self.caution_slots[subject] = is_positive
+        if subject == "임산부":
+            self.extra_context["임산부"] = is_positive
         #print(f"[record_clarify_answer] {subject}: {is_positive}")
     
 

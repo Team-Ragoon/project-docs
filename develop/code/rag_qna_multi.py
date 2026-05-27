@@ -24,7 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
-from medication_loader import get_drug_info
+from medication_loader import get_drug_info, is_acetaminophen_only, is_diarrhea_medicine
 from stdio_utf8 import configure_stdio_utf8
 
 load_dotenv()
@@ -64,6 +64,24 @@ else:
 
 # 2. LLM 설정
 llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
+
+SAFETY_SLOTS = [
+{
+"subject":  "임산부",
+"question": "혹시 임산부이시거나 임신 가능성이 있으신가요?",
+"reason":   "임산부에게 복용 금지인 약이 있을 수 있어요",
+},
+{
+"subject":  "수유부",
+"question": "혹시 수유 중이신가요?",
+"reason":   "수유부에게 복용 금지인 약이 있을 수 있어요",
+},
+{
+"subject":  "나이",
+"question": "혹시 12세 미만 소아가 복용할 예정인가요?",
+"reason":   "소아에게 복용 금지인 약이 있을 수 있어요",
+},
+]
 
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
@@ -186,20 +204,28 @@ class MedicalChatbot:
         # 흐름 B 역질문 진행.
         if self._pending_subject:
             if self._pending_subject == "나이":
-                # 나이는 숫자로 추출 후 extra_context에 저장, caution_slots는 약별 threshold로 결정
+                # 나이는 숫자로 추출 후 extra_context에 저장
+                # 나이 금기 슬롯이 있을 때만 caution_slots에도 저장
+                # 금기 슬롯이 없는 경우(제형 구분 목적)는 extra_context만 사용
                 age = parse_age(user_input, llm)
+                contraindications = self.validator.get_contraindications(self.state.drug_names)
+                age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
                 if age is not None:
                     self.state.extra_context["나이"] = age
                     contraindications = self.validator.get_contraindications(self.state.drug_names)
                     age_slot = next((c for c in contraindications if c["subject"] == "나이"), None)
                     is_contraindicated = (
                         age_slot is not None
-                        and any(age < t for t in age_slot.get("age_thresholds", {}).values())
+                        and any(
+                            (age <= t["age"] if t["inclusive"] else age < t["age"])
+                            for t in age_slot.get("age_thresholds", {}).values()
+                        )
                     )
                     self.state.caution_slots["나이"] = is_contraindicated
                 else:
-                    # 나이를 전혀 파악할 수 없는 경우: 모름으로 처리 (재질문 없음, unchecked에 포함)
-                    self.state.caution_slots["나이"] = None
+                    # 나이를 전혀 파악할 수 없는 경우: 나이 금기 슬롯이 있을 때만 모름으로 처리
+                    if age_slot is not None:
+                        self.state.caution_slots["나이"] = None
             else:
                 # 나이 외 슬롯: 기존 yes/no 판단
                 is_positive = parse_yes_no(
@@ -282,13 +308,6 @@ class MedicalChatbot:
                 #미리 채워진 슬롯 수만큼 clarify_count 차감
                 self.state.clarify_count += len(self.state.caution_slots)
 
-                # 나이 자동 처리분 추가 차감
-                _, auto_filled = self.validator.get_missing_slots(
-                    self.state.drug_names,
-                    self.state.caution_slots,
-                    self.state.extra_context,
-                )
-                self.state.clarify_count += auto_filled
 
             # 확인용 출력-----------------------------------------
             print(f"[caution_slots] {self.state.caution_slots}")
@@ -319,6 +338,15 @@ class MedicalChatbot:
         모든 슬롯이 채워졌으면 최종 답변 생성
         역질문 응답 처리 후 / medication 진입 시 공통 호출
         """
+        # 나이 선행 질문: caution 슬롯 여부와 무관하게 항상 나이를 먼저 확인
+        # 어린이/성인 제형 구분 및 연령별 금기 자동 처리에 필요
+        # 숫자 나이가 이미 추출된 경우에만 건너뜀 (소아여부만 있는 경우는 질문)
+        if "나이" not in self.state.extra_context:
+            question = "복용하실 분의 정확한 나이를 알려주세요. (예: 7세, 30세)"
+            self._pending_subject = "나이"
+            self._pending_question = question
+            return question  # clarify_count 증가 없음 — 필수 선행 질문
+
         # 현재까지 True인 슬롯 기준으로 복용 가능한 약 먼저 계산
         applicable_subjects = {s for s, v in self.state.caution_slots.items() if v is True}
         can_drugs = (
@@ -331,6 +359,18 @@ class MedicalChatbot:
         if not can_drugs:
             return self._generate_final_answer()
 
+        # 설사약 임산부 선행 질문: can_drugs에 설사약이 남아있고 임산부 여부 미확인인 경우
+        # DB에 임산부 금기가 없는 설사약(동성정로환 등)도 임신 중 복용 위험 있으므로 필수 확인
+        has_diarrhea = any(is_diarrhea_medicine(d) for d in can_drugs)
+        preg_known = "임산부" in self.state.caution_slots or "임산부" in self.state.extra_context
+        if has_diarrhea and not preg_known and not self.validator._should_skip(
+            "임산부", self.state.caution_slots, self.state.extra_context
+        ):
+            question = "혹시 임산부이시거나 임신 가능성이 있으신가요?"
+            self._pending_subject = "임산부"
+            self._pending_question = question
+            return question  # clarify_count 증가 없음 — 설사약 필수 선행 질문
+
         # 캐시 조회는 전체 drug_names로(재파싱 방지), 질문 필터링은 can_drugs로
         if self.validator.should_clarify(
             self.state.drug_names,
@@ -339,6 +379,13 @@ class MedicalChatbot:
             self.state.extra_context,
             can_drugs=can_drugs,
         ):
+            # should_clarify 내부에서 나이 슬롯이 자동 채워졌을 수 있음 → can_drugs 재계산
+            updated_subjects = {s for s, v in self.state.caution_slots.items() if v is True}
+            if updated_subjects != applicable_subjects:
+                can_drugs = self._get_remaining_candidates(updated_subjects)
+                if not can_drugs:
+                    return self._generate_final_answer()
+
             slot = self.validator.get_priority_slot(
                 self.state.drug_names,
                 self.state.caution_slots,
@@ -468,7 +515,7 @@ class MedicalChatbot:
             if subject == "나이" and user_age is not None:
                 # 약별 나이 기준으로 개별 판단 (합산 기준 아님)
                 for drug, threshold in c.get("age_thresholds", {}).items():
-                    if user_age < threshold:
+                    if user_age <= threshold["age"] if threshold["inclusive"] else user_age < threshold["age"]:
                         excluded.add(drug)
             else:
                 excluded.update(c.get("applicable_drugs", self.state.drug_names))
@@ -540,7 +587,32 @@ class MedicalChatbot:
 
         can_drugs = self._get_remaining_candidates(applicable_subjects) if applicable_subjects else drug_names
 
-         # 복용 가능한 약이 없는 경우 → 전체 복용 불가
+        # 임산부 guard: extra_context에서 임산부 확인 시 아세트아미노펜 단일 성분 약만 허용
+        if self.state.extra_context.get("임산부") is True:
+            safe_drugs = [d for d in can_drugs if is_acetaminophen_only(d)]
+            if not safe_drugs:
+                answer = self.cannot_recommend.invoke({
+                    "drug_keyword": drug_keyword,
+                    "user_profile": user_profile,
+                    "applicable_cautions": "- 임산부: 후보 약이 모두 복합 성분으로, 임산부에게는 아세트아미노펜 단일 성분 약만 권장됩니다.",
+                })
+                return f"{summary}\n\n{answer}"
+            can_drugs = safe_drugs
+
+        # 임산부 + 설사약 guard: 설사약은 임산부에게 안전성 미확인으로 추천 불가
+        if self.state.extra_context.get("임산부") is True:
+            non_diarrhea = [d for d in can_drugs if not is_diarrhea_medicine(d)]
+            if len(non_diarrhea) < len(can_drugs):
+                if not non_diarrhea:
+                    answer = self.cannot_recommend.invoke({
+                        "drug_keyword": drug_keyword,
+                        "user_profile": user_profile,
+                        "applicable_cautions": "- 임산부: 설사약은 임신 중 안전성이 확인되지 않아 복용을 권장하지 않습니다.",
+                    })
+                    return f"{summary}\n\n{answer}"
+                can_drugs = non_diarrhea
+
+        # 복용 가능한 약이 없는 경우 → 전체 복용 불가
         if not can_drugs or (applicable and set(can_drugs) == set(drug_names)):
             answer = self.cannot_recommend.invoke({
                 "drug_keyword": drug_keyword,
