@@ -54,6 +54,7 @@ def has_acetaminophen(drug_names: list[str]) -> bool:
             return True
     return False
 
+# 임산부에게 추천할 때 아세트아미노펜 단일 성분 약인지 확인. (prompt가 가끔 놓칠 때가 있어서 코드로 강제)
 def is_acetaminophen_only(drug_name: str) -> bool:
     drug = _find_drug(drug_name)
     if not drug:
@@ -64,3 +65,10 @@ def is_acetaminophen_only(drug_name: str) -> bool:
 
 def get_drug_info(drug_name: str) -> dict | None:
     return _find_drug(drug_name)
+
+# '설사'약인지 확인. (임산부에게 추천하지 않기 위해서.)
+def is_diarrhea_medicine(drug_name: str) -> bool:
+    drug = _find_drug(drug_name)
+    if not drug:
+        return False
+    return "설사" in (drug.get("efcyQesitm") or "")

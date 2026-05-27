@@ -24,7 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
-from medication_loader import get_drug_info, is_acetaminophen_only
+from medication_loader import get_drug_info, is_acetaminophen_only, is_diarrhea_medicine
 
 load_dotenv()
 
@@ -366,6 +366,18 @@ class MedicalChatbot:
         if not can_drugs:
             return self._generate_final_answer()
 
+        # 설사약 임산부 선행 질문: can_drugs에 설사약이 남아있고 임산부 여부 미확인인 경우
+        # DB에 임산부 금기가 없는 설사약(동성정로환 등)도 임신 중 복용 위험 있으므로 필수 확인
+        has_diarrhea = any(is_diarrhea_medicine(d) for d in can_drugs)
+        preg_known = "임산부" in self.state.caution_slots or "임산부" in self.state.extra_context
+        if has_diarrhea and not preg_known and not self.validator._should_skip(
+            "임산부", self.state.caution_slots, self.state.extra_context
+        ):
+            question = "혹시 임산부이시거나 임신 가능성이 있으신가요?"
+            self._pending_subject = "임산부"
+            self._pending_question = question
+            return question  # clarify_count 증가 없음 — 설사약 필수 선행 질문
+
         # 캐시 조회는 전체 drug_names로(재파싱 방지), 질문 필터링은 can_drugs로
         if self.validator.should_clarify(
             self.state.drug_names,
@@ -374,6 +386,13 @@ class MedicalChatbot:
             self.state.extra_context,
             can_drugs=can_drugs,
         ):
+            # should_clarify 내부에서 나이 슬롯이 자동 채워졌을 수 있음 → can_drugs 재계산
+            updated_subjects = {s for s, v in self.state.caution_slots.items() if v is True}
+            if updated_subjects != applicable_subjects:
+                can_drugs = self._get_remaining_candidates(updated_subjects)
+                if not can_drugs:
+                    return self._generate_final_answer()
+
             slot = self.validator.get_priority_slot(
                 self.state.drug_names,
                 self.state.caution_slots,
@@ -586,6 +605,19 @@ class MedicalChatbot:
                 })
                 return f"{summary}\n\n{answer}"
             can_drugs = safe_drugs
+
+        # 임산부 + 설사약 guard: 설사약은 임산부에게 안전성 미확인으로 추천 불가
+        if self.state.extra_context.get("임산부") is True:
+            non_diarrhea = [d for d in can_drugs if not is_diarrhea_medicine(d)]
+            if len(non_diarrhea) < len(can_drugs):
+                if not non_diarrhea:
+                    answer = self.cannot_recommend.invoke({
+                        "drug_keyword": drug_keyword,
+                        "user_profile": user_profile,
+                        "applicable_cautions": "- 임산부: 설사약은 임신 중 안전성이 확인되지 않아 복용을 권장하지 않습니다.",
+                    })
+                    return f"{summary}\n\n{answer}"
+                can_drugs = non_diarrhea
 
         # 복용 가능한 약이 없는 경우 → 전체 복용 불가
         if not can_drugs or (applicable and set(can_drugs) == set(drug_names)):
