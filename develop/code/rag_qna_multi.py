@@ -25,15 +25,13 @@ from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
 from medication_loader import get_drug_info, is_acetaminophen_only, is_diarrhea_medicine
-import os
-os.environ["HF_HOME"] = "D:/hf_cache"  # 외장메모리 경로
+
 load_dotenv()
 
 
 # 1. ChromaDB 로드
-#_DEVELOP_ROOT = Path(__file__).resolve().parent.parent
-#CHROMA_PATH = str(_DEVELOP_ROOT / "chroma_db")
-CHROMA_PATH = "D:/chroma_db"
+_DEVELOP_ROOT = Path(__file__).resolve().parent.parent
+CHROMA_PATH = str(_DEVELOP_ROOT / "chroma_db")
 _DRUG_DOCUMENTS_PATH = _DEVELOP_ROOT / "dataset" / "drug_documents.json"
 
 ef = SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")
