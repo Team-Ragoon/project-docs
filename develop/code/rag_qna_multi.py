@@ -24,7 +24,7 @@ from rag import (
 from dialogue import DialogueState
 from drug_detector import detect_drugs_in_text
 from answer_parser import parse_yes_no, parse_age
-from medication_loader import get_drug_info, is_acetaminophen_only, is_diarrhea_medicine
+from medication_loader import get_drug_info, is_acetaminophen_only, is_diarrhea_medicine, has_corydalis
 
 load_dotenv()
 
@@ -366,17 +366,20 @@ class MedicalChatbot:
         if not can_drugs:
             return self._generate_final_answer()
 
-        # 설사약 임산부 선행 질문: can_drugs에 설사약이 남아있고 임산부 여부 미확인인 경우
-        # DB에 임산부 금기가 없는 설사약(동성정로환 등)도 임신 중 복용 위험 있으므로 필수 확인
-        has_diarrhea = any(is_diarrhea_medicine(d) for d in can_drugs)
+        # 임산부 선행 질문: can_drugs에 설사약 또는 현호색/연호색 성분 약이 있고 임산부 여부 미확인인 경우
+        # DB 금기 미기재 약도 임신 중 위험 성분(현호색 등) 또는 설사약은 반드시 확인 필요
+        needs_preg_check = any(
+            is_diarrhea_medicine(d) or has_corydalis(d)
+            for d in can_drugs
+        )
         preg_known = "임산부" in self.state.caution_slots or "임산부" in self.state.extra_context
-        if has_diarrhea and not preg_known and not self.validator._should_skip(
+        if needs_preg_check and not preg_known and not self.validator._should_skip(
             "임산부", self.state.caution_slots, self.state.extra_context
         ):
             question = "혹시 임산부이시거나 임신 가능성이 있으신가요?"
             self._pending_subject = "임산부"
             self._pending_question = question
-            return question  # clarify_count 증가 없음 — 설사약 필수 선행 질문
+            return question  # clarify_count 증가 없음 — 필수 선행 질문
 
         # 캐시 조회는 전체 drug_names로(재파싱 방지), 질문 필터링은 can_drugs로
         if self.validator.should_clarify(
@@ -418,7 +421,12 @@ class MedicalChatbot:
     def _build_user_profile(self) -> str:
         lines = []
         for subject, value in self.state.caution_slots.items():
-            status = "해당" if value is True else "해당 없음" if value is False else "확인 불가"
+            if value is True:
+                status = "금기 해당"
+            elif value is False:
+                status = "해당 없음"
+            else:
+                status = "확인 불가"
             lines.append(f"-{subject} : {status}")
         return "\n".join(lines) if lines else "- 특이사항 없음"
     
@@ -618,6 +626,19 @@ class MedicalChatbot:
                     })
                     return f"{summary}\n\n{answer}"
                 can_drugs = non_diarrhea
+
+        # 임산부 + 현호색/연호색 성분 guard: 현호색 성분은 임산부 복용 금기
+        if self.state.extra_context.get("임산부") is True:
+            non_corydalis = [d for d in can_drugs if not has_corydalis(d)]
+            if len(non_corydalis) < len(can_drugs):
+                if not non_corydalis:
+                    answer = self.cannot_recommend.invoke({
+                        "drug_keyword": drug_keyword,
+                        "user_profile": user_profile,
+                        "applicable_cautions": "- 임산부: 현호색(연호색) 성분이 포함된 약은 임신 중 복용을 권장하지 않습니다.",
+                    })
+                    return f"{summary}\n\n{answer}"
+                can_drugs = non_corydalis
 
         # 복용 가능한 약이 없는 경우 → 전체 복용 불가
         if not can_drugs or (applicable and set(can_drugs) == set(drug_names)):

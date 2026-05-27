@@ -72,3 +72,10 @@ def is_diarrhea_medicine(drug_name: str) -> bool:
     if not drug:
         return False
     return "설사" in (drug.get("efcyQesitm") or "")
+
+def has_corydalis(drug_name: str) -> bool:
+    drug = _find_drug(drug_name)
+    if not drug:
+        return False
+    ingredient = drug.get("ingredient_api") or ""
+    return "현호색" in ingredient or "연호색" in ingredient
