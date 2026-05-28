@@ -249,7 +249,7 @@ class MedicalChatbot:
         })
 
         # 확인용 출력 --------------------------------
-        print(f"[analysis 전체] {analysis}")
+        #print(f"[analysis 전체] {analysis}")
         #--------------------------------------------
 
         # analyzer가 미리 탐지하지만 보완하는 역할. (잘못 판단한 경우를 대비)
@@ -264,7 +264,7 @@ class MedicalChatbot:
         self.state.update_from_analysis(analysis)
 
         # 확인용 출력 -----------------------------------
-        print(f"[drug_names] {self.state.drug_names}")
+        #print(f"[drug_names] {self.state.drug_names}")
         #------------------------------------------------
 
         # query_type이 medication이라면, query에 사용자의 상황이 포함되어 있는지 확인.
@@ -293,8 +293,8 @@ class MedicalChatbot:
 
 
             # 확인용 출력-----------------------------------------
-            print(f"[caution_slots] {self.state.caution_slots}")
-            print(f"[extra_context] {self.state.extra_context}")
+            #print(f"[caution_slots] {self.state.caution_slots}")
+            #print(f"[extra_context] {self.state.extra_context}")
             #-----------------------------------------------------
         
 
@@ -572,9 +572,9 @@ class MedicalChatbot:
         }
 
         # ── 확인용 print ────────────────────────────────
-        print(f"[caution_slots] {self.state.caution_slots}")
-        print(f"[applicable] {applicable}")
-        print(f"[applicable_subjects] {applicable_subjects}")
+        # print(f"[caution_slots] {self.state.caution_slots}")
+        # print(f"[applicable] {applicable}")
+        # print(f"[applicable_subjects] {applicable_subjects}")
         # ─────────────────────────────────────────────
 
         can_drugs = self._get_remaining_candidates(applicable_subjects) if applicable_subjects else drug_names
@@ -637,7 +637,7 @@ class MedicalChatbot:
 
         # 연령 기반 후보 필터링
         filtered_names = self._filter_candidates_by_age(can_drugs)
-        print(f"[can_drugs] {can_drugs}")
+        #print(f"[can_drugs] {can_drugs}")
 
         # 필터링된 후보로 1개 추천 여부 판별
         original_names = self.state.drug_names

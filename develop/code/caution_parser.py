@@ -216,7 +216,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
 
     # 우선순위 정렬
     sorted_items = sorted(deduped, key = _get_priority)
-    print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
+    #print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
 
     # 정규화 + applicable_drugs + (나이 슬롯은 age_thresholds) 추가
     final_items = []
@@ -246,10 +246,10 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     _cache[cache_key] = tuple(final_items)
 
     # 확인용 출력 ----------------------------------------
-    print("\n[역질문 목록]")
-    for i, item in enumerate(_cache[cache_key], 1):
-        print(f"  {i}. subject: {item['subject']}")
-        print(f"     applicable_drugs: {item['applicable_drugs']}")
+    # print("\n[역질문 목록]")
+    # for i, item in enumerate(_cache[cache_key], 1):
+    #     print(f"  {i}. subject: {item['subject']}")
+    #     print(f"     applicable_drugs: {item['applicable_drugs']}")
     # ----------------------------------------------------
 
     return _cache[cache_key]
