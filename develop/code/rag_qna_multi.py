@@ -65,23 +65,6 @@ else:
 # 2. LLM 설정
 llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
 
-SAFETY_SLOTS = [
-{
-"subject":  "임산부",
-"question": "혹시 임산부이시거나 임신 가능성이 있으신가요?",
-"reason":   "임산부에게 복용 금지인 약이 있을 수 있어요",
-},
-{
-"subject":  "수유부",
-"question": "혹시 수유 중이신가요?",
-"reason":   "수유부에게 복용 금지인 약이 있을 수 있어요",
-},
-{
-"subject":  "나이",
-"question": "혹시 12세 미만 소아가 복용할 예정인가요?",
-"reason":   "소아에게 복용 금지인 약이 있을 수 있어요",
-},
-]
 
 # 3. Query Expansion
 EXPAND_PROMPT = ChatPromptTemplate.from_messages([
@@ -461,22 +444,23 @@ class MedicalChatbot:
         adult_drugs = [d for d in names if not any(k in d for k in KIDS_KEYWORDS)]
         return adult_drugs if adult_drugs else names
 
-    # 약별 성분 및 금기 정보 요약
+    # 약별 성분·효능·이상반응 요약 (RAG 데이터 기반)
     def _build_drug_profiles_for(self, drug_names: list[str]) -> str:
         lines = []
         for name in drug_names:
             drug = get_drug_info(name)
             if not drug:
                 continue
-            ingredient = (drug.get("ingredient_api") or "성분 정보 없음").strip()
-            efficacy = (drug.get("efcyQesitm") or "정보 없음").strip()[:200]
-            # 금기 문장만 간략히 포함
+            ingredient  = (drug.get("ingredient_api")    or "정보 없음").strip()
+            efficacy    = (drug.get("efcyQesitm")        or "정보 없음").strip()[:200]
+            side_effect = (drug.get("seQesitm")          or "정보 없음").strip()[:300]
             lines.append(
                 f"- {name}\n"
-                f"성분: {ingredient}\n"
-                f"효능·효과: {efficacy}"
-                )
-        return "\n".join(lines) if lines else "없음"
+                f"  성분: {ingredient}\n"
+                f"  효능·효과: {efficacy}\n"
+                f"  이상반응: {side_effect}"
+            )
+        return "\n\n".join(lines) if lines else "없음"
     
     # 1개 추천 조건 코드로 판별. (LLM 판단만으로 부족함.)
     def _should_recommend_single(self) -> bool:
