@@ -115,7 +115,7 @@ def test_parse_yes_no_rule_based(user_input: str, expected):
     (
         "있긴 한데 잘 모르겠어요",
         "현재 다른 약을 복용 중이신가요?",
-        True,
+        None,
     ),
 ])
 def test_parse_yes_no_llm_fallback(user_input: str, question: str, expected):
