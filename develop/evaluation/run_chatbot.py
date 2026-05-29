@@ -97,6 +97,15 @@ def find_answer_for_question(ai_question: str, user_answers: dict) -> str:
             if len(token) >= 2 and token in ai_question:
                 return answer
 
+    # 4. 접미사 제거 핵심어 매칭 (last-resort)
+    #    봇은 서술형으로 묻지만("...급성 복부질환 진단을 받으셨나요?") 시나리오
+    #    키는 "복부질환자"처럼 접미사가 붙어 있어 1~3단계가 모두 빗나가는 경우 대응.
+    #    "자" 접미사를 떼면 "복부질환"이 질문에 포함되어 매칭됨.
+    for subject, answer in user_answers.items():
+        core = subject[:-1] if subject.endswith("자") and len(subject) > 2 else subject
+        if len(core) >= 2 and core in ai_question:
+            return answer
+
     return "아니요"
 
 
@@ -164,7 +173,20 @@ def run_scenario(scenario: dict, max_turns: int = 10) -> dict:
         # 다음 사용자 답변 결정
         if scenario["flow"] == "B" and bot._pending_subject:
             # 흐름 B: 정확히 subject 매칭
-            user_input = user_answers.get(bot._pending_subject, "아니요")
+            subj = bot._pending_subject
+            if subj in user_answers:
+                # 슬롯 이름과 시나리오 키가 정확히 일치 (예: "알코올 복용자", "나이")
+                user_input = user_answers[subj]
+            else:
+                # 슬롯 키가 시나리오에 직접 없는 경우:
+                # 봇은 "임산부"/"수유부"를 개별 슬롯으로 묻지만 시나리오는
+                # 통합 키 "임산부/수유부"로 답을 정의 → 질문 텍스트 기반으로 매칭.
+                matched = find_answer_for_question(response, user_answers)
+                # 나이 질문은 답이 없으면 "모르겠어요"(정보 없음).
+                # "아니요"는 parse_age가 못 잡아 무한 재질문 → 흐름 A와 일관 처리.
+                if subj == "나이" and matched == "아니요":
+                    matched = "모르겠어요"
+                user_input = matched
         else:
             # 흐름 A: 질문 패턴 매칭
             user_input = find_answer_for_question(response, user_answers)
@@ -249,4 +271,3 @@ def main():
     # 요약
     completed = sum(1 for r in results if r.get("completed"))
     print(f"\n  완료: {completed}/{len(SCENARIOS)}")
-
