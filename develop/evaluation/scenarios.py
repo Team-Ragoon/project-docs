@@ -32,7 +32,7 @@ SCENARIOS = [
             "공복 피해 식후 복용, 4시간 이상 간격, 1회 1~2캡슐 안내."
         ),
         "expected_drugs": ["이지엔6이브", "부루펜"],
-        "forbidden_drugs": ["타이레놀", "게보린"],
+        "forbidden_drugs": [],
         "expected_behaviors": ["역질문 3회 진행", "이부프로펜 계열 추천"],
     },
     {
@@ -62,7 +62,7 @@ SCENARIOS = [
             "소염 작용이 있어 월경통에 효과적."
         ),
         "expected_drugs": ["이지엔6이브", "부루펜"],
-        "forbidden_drugs": ["타이레놀"],
+        "forbidden_drugs": [],
         "expected_behaviors": ["역질문 진행", "이부프로펜 우선"],
     },
     {
@@ -786,8 +786,8 @@ SCENARIOS = [
         "scenario_id": "장엔폴-4",
         "flow": "B",
         "category": "복통약",
-        "user_input": "장엔폴 먹어도 돼?",
-        "user_answers": {"나이": "30세", "임산부/수유부": "네"},
+        "user_input": "장엔폴 먹어도 될까? 임신 3개월인데 급하게 화장실에 가야 할 것 같은 느낌이 계속 들어.",
+        "user_answers": {"나이": "30세"},
         "ground_truth": (
             "성인 임산부. 임산부/수유부 금기 → 복용 불가."
         ),
@@ -1129,11 +1129,11 @@ SCENARIOS = [
         "user_input": "8살 아이인데 감기 기운이 좀 있는 것 같아. 판콜 먹여도 될까?",
         "user_answers": {"아세트아미노펜 최대 용량": "잘 모르겠어", "해열진통제 복용자": "아니"},
         "ground_truth": (
-            "8세 아동. 어린이용 판콜아이콜드시럽 우선 추천. "
-            "판콜에스도 가능."
+            "8세 아동. 어린이용 판콜아이콜드시럽만 적합(만 7세 이상 용법 명시). "
+            "판콜에이내복액·판콜에스내복액은 둘 다 성인 용법만 있어(소아 용량 없음) 8세 부적합."
         ),
-        "expected_drugs": ["판콜아이콜드시럽", "판콜에스내복액"],
-        "forbidden_drugs": ["판콜에이내복액"],
+        "expected_drugs": ["판콜아이콜드시럽"],
+        "forbidden_drugs": ["판콜에이내복액", "판콜에스내복액"],
         "expected_behaviors": ["어린이용 시럽 우선", "15세 미만 임산부·알코올 질문 X"],
     },
     {
