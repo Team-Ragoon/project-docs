@@ -187,6 +187,7 @@ class MedicalChatbot:
         # 흐름 B 역질문 진행.
         if self._pending_subject:
             if self._pending_subject == "나이":
+                self.state._age_asked = True  # 숫자든 아니든 1회 답변받으면 재질문 안 함
                 # 나이는 숫자로 추출 후 extra_context에 저장
                 # 나이 금기 슬롯이 있을 때만 caution_slots에도 저장
                 # 금기 슬롯이 없는 경우(제형 구분 목적)는 extra_context만 사용
@@ -324,7 +325,7 @@ class MedicalChatbot:
         # 나이 선행 질문: caution 슬롯 여부와 무관하게 항상 나이를 먼저 확인
         # 어린이/성인 제형 구분 및 연령별 금기 자동 처리에 필요
         # 숫자 나이가 이미 추출된 경우에만 건너뜀 (소아여부만 있는 경우는 질문)
-        if "나이" not in self.state.extra_context:
+        if "나이" not in self.state.extra_context and not self.state._age_asked:
             question = "복용하실 분의 정확한 나이를 알려주세요. (예: 7세, 30세)"
             self._pending_subject = "나이"
             self._pending_question = question
