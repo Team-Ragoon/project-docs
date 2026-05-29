@@ -23,6 +23,7 @@ class DialogueState:
         self._history : list = [] #사용자의 history 저장을 위해 사용.
         self._cached_context : str = "" #첫 턴의 retrieval 결과를 역질문 중에 재사용
         self._in_flow_a_clarify : bool = False #역질문 진행 중 여부 (패턴 매칭보다 안전)
+        self._age_asked : bool = False  # 나이 질문을 이미 1회 했는지 (파싱 실패 시 무한 재질문 방지)
 
     def _reset_flow_a(self):
         self._history = []
@@ -50,6 +51,7 @@ class DialogueState:
         self.caution_slots = {}
         self.extra_context = {}
         self.clarify_count = 0
+        self._age_asked = False
         self._reset_flow_a()
 
     
