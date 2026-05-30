@@ -782,6 +782,7 @@ PANCOL_SCENARIOS = [
         },
         "expect_ok": True,
         "expect_drug": "판콜아이콜드시럽",
+        "expect_not_drug" : "판콜에스내복액",
     },
     {
         "name": "[판콜/흐름B] 우울증약(MAO억제제 사전 탐지) — 복용 불가",
