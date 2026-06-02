@@ -218,8 +218,12 @@
 
 ```
 code/
-├── prompt/
+├── prompts/
 │   └── system_prompt.py    
+├── test_b/
+│   ├── conftest.py
+│   ├── test_component_b.py
+│   └── test_scenario_b.py
 ├── analyzer.py
 ├── answer_parser.py
 ├── caution_parser.py
@@ -243,3 +247,106 @@ npm start
 ```
 
 - API http://localhost:8000 · React http://localhost:3000
+
+
+## 흐름 B 테스트
+
+### 왜 RAGAS가 흐름 B에 맞지 않는가
+
+RAGAS가 사용하는 지표들은 **"검색(Retrieval) → 생성(Generation)"** 구조에서 의미를 가지므로, 먼저 vector DB에서 관련 문서를 찾고, 그 문서를 근거로 LLM이 답변을 생성하는 흐름이 전제되어야 함.
+
+**흐름 A**는 이 구조를 그대로 따름.
+- 사용자가 증상을 입력 → ChromaDB에서 embedding 유사도로 문서 검색 → LLM이 문서를 근거로 약을 추천
+- RAGAS가 "검색된 문서가 적절했는가", "LLM이 문서에 충실한 답변을 했는가"를 평가할 수 있음
+
+**흐름 B**는 이 구조를 따르지 않음.
+- 사용자가 약 이름을 직접 언급 → **약 이름으로 DB를 직접 조회** (vector 유사도 검색 없음) → 금기사항 역질문 → 최종 판정
+- 검색 단계가 키-값 조회이므로 Context Relevance를 측정하는 것 자체가 의미 없음
+- 오히려 유사도 검색을 적용하면 사용자가 언급한 약이 아닌 다른 유사한 약 문서가 검색될 수 있음
+
+따라서 흐름 B에 RAGAS를 적용하는 것은 **평가 설계 자체가 흐름 특성과 맞지 않는** 것이며, 다른 방식으로 검증해야 함.
+
+---
+
+### 흐름 B에 맞는 테스트 방식
+
+흐름 B의 핵심 역할은 2가지임.
+
+1. **금기 여부를 정확하게 판단하는가** — 나이·임산부·알코올 등의 사용자 정보를 올바르게 수집하고 파싱해서 복용 가능/불가를 올바르게 결정하는가
+2. **최종 응답이 올바른가** — 추천해야 할 약을 추천했는가, 제외해야 할 약(금기 해당)이 응답에 없는가
+
+이를 검증하기 위해 두 계층의 테스트를 사용함.
+
+#### 계층 1 — 컴포넌트 단위 테스트 (`test_component_b.py`)
+
+흐름 B를 구성하는 개별 함수를 독립적으로 검증하는 file. E2E 테스트에서 실패가 발생했을 때 **어느 함수가 문제인지** 범위를 좁히는 용도로도 사용함.
+
+| 테스트 대상 | 검증 내용 | LLM 필요 여부 |
+|---|---|---|
+| `parse_yes_no()` — 규칙 기반 | "ㅇㅇ" → True, "놉" → False, "잘 모르겠어" → None 등 키워드 매칭이 올바른지 | ❌ (Mock 사용) |
+| `parse_yes_no()` — LLM 판단 | "네, 저는 임산부가 아니에요" → False 처럼 문맥 파악이 필요한 케이스 | ✅ |
+| `parse_age()` | "중학교 1학년" → 13, "2개월" → 0.17 등 나이 변환이 올바른지 | ✅ |
+| `_build_user_profile()` | `caution_slots = {"나이": True}` → 텍스트에 "금기 해당" 포함 여부 | ❌ |
+
+규칙 기반 `parse_yes_no` 케이스는 LLM 호출 없이 실행되므로 빠르게 돌릴 수 있고 LLM이 필요한 케이스는 `@pytest.mark.slow`로 분리되어 있어 선택적으로 실행 가능함.
+
+#### 계층 2 — E2E 시나리오 테스트 (`test_scenario_b.py`)
+
+시나리오를 사용하여 실제 대화 흐름 전체를 자동으로 재현하고 최종 응답을 검증하는 file.
+
+**기존 `run_clarify_test()`와의 차이**
+
+| 항목 | `run_clarify_test()` (기존) | `run_scenario()` (테스트) |
+|---|---|---|
+| 응답 처리 | `print(response)` — 사람이 눈으로 확인 | `return response` — 코드가 자동 판정 |
+| 판정 주체 | 사람 | `assert` 문 |
+| 실패 감지 | 출력을 읽고 직접 판단 | `PASSED / FAILED` 자동 표시 |
+| 40개 케이스 실행 시 | 출력 40개를 모두 읽어야 함 | 최종 요약 1줄 (`35 passed, 5 failed`) |
+
+**각 케이스의 구조**
+
+```python
+{
+    "name": "[게보린/흐름B] 중학교1학년+생리통",
+    "first_input": "중학교 1학년 아인데 생리통이 좀 심하네. 게보린 먹어도 될까?",
+    "answers": {
+        "해열진통제 복용자": "아뇨",
+        "아스피린 천식 환자": "아니요",
+    },
+    "expect_ok": True,            # 💊 추천이 나와야 함
+    "expect_not_drug": "게보린정" # 15세 미만 금기 약이 응답에 없어야 함
+}
+```
+
+- `answers`: 역질문이 발생했을 때 어떤 subject에 어떤 답변을 줄지 정의. 정의되지 않은 subject가 나오면 기본값 "아니요" 사용
+- `expect_ok`: `True`면 응답에 `💊` 포함 + `🚫` 미포함 확인 / `False`면 반대
+- `expect_drug` / `expect_not_drug`: 특정 약 이름이 응답에 있어야 하거나 없어야 하는 경우에 사용
+
+**실행 방법**
+
+```bash
+# test_b/ 폴더 안에서
+pytest -v                          # 전체 실행
+pytest -v -k "게보린"              # 특정 약만 필터링
+pytest test_component_b.py -v -m "not slow"   # LLM 없이 빠른 것만
+pytest -v --tb=short               # 실패 시 간략 출력
+```
+
+---
+
+### 테스트 파일 구성
+
+#### `conftest.py`
+- 실제 테스트를 진행하는 파일이 아님
+- pytest가 테스트 파일보다 **먼저 자동 실행**하여 경로를 설정하는 역할
+- `test_b/`는 `develop/code/`의 하위 폴더이므로, `sys.path`에 상위 경로(`develop/code/`)를 추가해야 `rag_qna_multi`, `answer_parser` 등의 모듈을 import할 수 있음
+
+#### `test_component_b.py`
+- 흐름 B를 구성하는 개별 함수를 단위 테스트
+- `@pytest.mark.parametrize`로 입력-기대값 쌍을 나열하여 케이스 추가가 쉬움
+- LLM 불필요 케이스(규칙 기반 `parse_yes_no`)는 `MagicMock`으로 LLM 호출 없이 실행
+
+#### `test_scenario_b.py`
+- `@pytest.mark.parametrize`가 `ALL_SCENARIOS` 리스트를 펼쳐 케이스마다 `test_flow_b_scenario()` 호출
+- `run_scenario()`는 기존 `run_clarify_test()`와 동일한 루프 구조이지만 `print()` 대신 최종 응답을 반환하고, `test_flow_b_scenario()`의 `assert`가 자동으로 판정
+- 새 케이스 추가 시 `ALL_SCENARIOS` 리스트에 딕셔너리 1개를 append하면 됨
