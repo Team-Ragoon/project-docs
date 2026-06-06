@@ -85,7 +85,14 @@ def expand_query(question: str) -> list[str]:
 # 흐름 A 최종 추천 완료 감지 함수
 # LLM 응답에 "💊" 또는 "추천 약:"이 포함되면 역질문 종료로 간주
 def is_final_recommendation(response: str) -> bool:
-    return "💊" in response or "추천 약:" in response or "🚫" in response
+    if "💊" in response or "추천 약:" in response or "🚫" in response:
+        return True
+    # 음주 후 거부, 항우울제 경고 등 추천 없이 끝나는 응답도 최종으로 처리
+    refusal_kw = [
+        "추천이 어렵습니다", "추천드리기 어렵", "추천해드리기 어렵", "추천드릴 수 없",
+        "복용하지 마세요", "복용을 권하지 않",
+    ]
+    return any(kw in response for kw in refusal_kw)
 
 
 # 약 이름으로 ChromaDB에서 해당 약의 문서를 직접 가져오는 함수
