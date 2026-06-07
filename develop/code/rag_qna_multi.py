@@ -85,7 +85,14 @@ def expand_query(question: str) -> list[str]:
 # 흐름 A 최종 추천 완료 감지 함수
 # LLM 응답에 "💊" 또는 "추천 약:"이 포함되면 역질문 종료로 간주
 def is_final_recommendation(response: str) -> bool:
-    return "💊" in response or "추천 약:" in response or "🚫" in response
+    if "💊" in response or "추천 약:" in response or "🚫" in response:
+        return True
+    # 음주 후 거부, 항우울제 경고 등 추천 없이 끝나는 응답도 최종으로 처리
+    refusal_kw = [
+        "추천이 어렵습니다", "추천드리기 어렵", "추천해드리기 어렵", "추천드릴 수 없",
+        "복용하지 마세요", "복용을 권하지 않",
+    ]
+    return any(kw in response for kw in refusal_kw)
 
 
 # 약 이름으로 ChromaDB에서 해당 약의 문서를 직접 가져오는 함수
@@ -250,7 +257,7 @@ class MedicalChatbot:
         })
 
         # 확인용 출력 --------------------------------
-        print(f"[analysis 전체] {analysis}")
+        #print(f"[analysis 전체] {analysis}")
         #--------------------------------------------
 
         # analyzer가 미리 탐지하지만 보완하는 역할. (잘못 판단한 경우를 대비)
@@ -265,7 +272,7 @@ class MedicalChatbot:
         self.state.update_from_analysis(analysis)
 
         # 확인용 출력 -----------------------------------
-        print(f"[drug_names] {self.state.drug_names}")
+        #print(f"[drug_names] {self.state.drug_names}")
         #------------------------------------------------
 
         # query_type이 medication이라면, query에 사용자의 상황이 포함되어 있는지 확인.
@@ -294,8 +301,8 @@ class MedicalChatbot:
 
 
             # 확인용 출력-----------------------------------------
-            print(f"[caution_slots] {self.state.caution_slots}")
-            print(f"[extra_context] {self.state.extra_context}")
+            #print(f"[caution_slots] {self.state.caution_slots}")
+            #print(f"[extra_context] {self.state.extra_context}")
             #-----------------------------------------------------
         
 
@@ -443,7 +450,13 @@ class MedicalChatbot:
 
         # 성인: 키즈 제형 제외
         adult_drugs = [d for d in names if not any(k in d for k in KIDS_KEYWORDS)]
-        return adult_drugs if adult_drugs else names
+        if adult_drugs:
+            return adult_drugs
+        # 나이가 확인된 경우: 성인에게 키즈 약 추천 방지 → 빈 목록 반환 (복용 불가 처리됨)
+        if user_age is not None:
+            return []
+        # 나이 정보 없음: fallback으로 전체 반환
+        return names
 
     # 약별 성분·효능·이상반응 요약 (RAG 데이터 기반)
     def _build_drug_profiles_for(self, drug_names: list[str]) -> str:
@@ -573,9 +586,9 @@ class MedicalChatbot:
         }
 
         # ── 확인용 print ────────────────────────────────
-        print(f"[caution_slots] {self.state.caution_slots}")
-        print(f"[applicable] {applicable}")
-        print(f"[applicable_subjects] {applicable_subjects}")
+        # print(f"[caution_slots] {self.state.caution_slots}")
+        # print(f"[applicable] {applicable}")
+        # print(f"[applicable_subjects] {applicable_subjects}")
         # ─────────────────────────────────────────────
 
         can_drugs = self._get_remaining_candidates(applicable_subjects) if applicable_subjects else drug_names
@@ -627,18 +640,35 @@ class MedicalChatbot:
             })
             return f"{summary}\n\n{answer}"
         
-        # 확인 안 된 slot (역질문 하지 않은 사항들)
+        # 나이를 물었지만 모른다고 답한 경우 (key가 caution_slots에 존재하고 값이 None)
+        age_unknown = (
+            "나이" in self.state.caution_slots
+            and self.state.caution_slots["나이"] is None
+        )
+
+        # 확인 안 된 slot (역질문 하지 않은 사항들) — age_unknown 시 나이는 별도 처리
         unchecked = [
             c["subject"]
             for c in all_contraindications
             if self.state.caution_slots.get(c["subject"]) is None
             and not self.validator._should_skip(c["subject"], self.state.caution_slots, self.state.extra_context)
+            and not (age_unknown and c["subject"] == "나이")  # 나이 모름은 별도 처리
         ]
 
 
         # 연령 기반 후보 필터링
         filtered_names = self._filter_candidates_by_age(can_drugs)
-        print(f"[can_drugs] {can_drugs}")
+        #print(f"[can_drugs] {can_drugs}")
+
+        # 연령 필터링 후 추천 가능한 약이 없는 경우 (성인에게 키즈 약만 남은 경우 등)
+        if not filtered_names:
+            answer = self.cannot_recommend.invoke({
+                "drug_keyword": drug_keyword,
+                "user_profile": user_profile,
+                "applicable_cautions": "\n".join(applicable) if applicable
+                    else "- 연령 제한: 성인에게 적합한 제형이 없습니다.",
+            })
+            return f"{summary}\n\n{answer}"
 
         # 필터링된 후보로 1개 추천 여부 판별
         original_names = self.state.drug_names
@@ -653,13 +683,14 @@ class MedicalChatbot:
             "drug_keyword" : drug_keyword,
             "symptom" : self.state.symptom or "언급 없음",
             "drug_candidates" : "\n".join(f"- {d}" for d in filtered_names),
-            "drug_profiles" : drug_profiles, 
+            "drug_profiles" : drug_profiles,
             "user_profile" : user_profile,
             "applicable_cautions": "특별한 금기사항 해당 없음",
             "extra_context" : extra_context or "없음",
             "unchecked_cautions": ", ".join(unchecked) if unchecked else "없음",
+            "age_unknown_caution": "있음" if age_unknown else "없음",
             "recommend_count" : recommend_count,
-        }) 
+        })
 
         return f"{summary}\n\n{answer}"
 
