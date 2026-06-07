@@ -34,20 +34,26 @@ PRIORITY_RULES = [
     (6, re.compile(r"해열진통제")),
     # 우선순위 7: MAO 억제제 (감기약 특유)
     (7, re.compile(r"MAO\s*억제제|모노아민\s*산화효소|항우울제|항정신병")),
-    # 우선순위 8: 위장진통·진경제 (설사약 특유 - 장엔폴 상호작용 금기)
-    (8, re.compile(r"위장진통|진경제")),
-    # 우선순위 9: 간장애
-    (9, re.compile(r"간장애")),
-    # 우선순위 10: 신장 관련
-    (10, re.compile(r"신장|신부전|신장애")),
-    # 우선순위 11: 심장/혈압 관련
-    (11, re.compile(r"심장|고혈압|혈압|심부전")),
-    # 우선순위 12: 위장 관련
-    (12, re.compile(r"위장|궤양|출혈")),
-    # 우선순위 13: 항암 관련
-    (13, re.compile(r"항암|메토트렉세이트")),
-    # 우선순위 14: 수술 관련
-    (14, re.compile(r"수술|우회로")),
+    # 우선순위 8: 아스피린 천식 환자 (과거 이력 기반 — MAO 억제제보다 후순위)
+    # 이 규칙이 없으면 "해열진통제·감기약 복용 시 천식 경험자"의 reason에 "해열진통제"가
+    # 포함되어 _get_priority 2차 판단(subject+reason)에서 priority 6으로 잘못 분류됨.
+    # subject만 보는 1차 판단에서 r"아스피린.*천식"이 먼저 매칭되어 priority 8을 반환하므로
+    # 2차 판단(subject+reason)까지 도달하지 않아 오분류가 방지됨.
+    (8, re.compile(r"아스피린.*천식|천식.*아스피린")),
+    # 우선순위 9: 위장진통·진경제 (설사약 특유 - 장엔폴 상호작용 금기)
+    (9, re.compile(r"위장진통|진경제")),
+    # 우선순위 10: 간장애
+    (10, re.compile(r"간장애")),
+    # 우선순위 11: 신장 관련
+    (11, re.compile(r"신장|신부전|신장애")),
+    # 우선순위 12: 심장/혈압 관련
+    (12, re.compile(r"심장|고혈압|혈압|심부전")),
+    # 우선순위 13: 위장 관련
+    (13, re.compile(r"위장|궤양|출혈")),
+    # 우선순위 14: 항암 관련
+    (14, re.compile(r"항암|메토트렉세이트")),
+    # 우선순위 15: 수술 관련
+    (15, re.compile(r"수술|우회로")),
 ]
 
 # 아세트아미노펜 최대 용량 슬롯 (validator에서 동적 삽입)
@@ -216,7 +222,7 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
 
     # 우선순위 정렬
     sorted_items = sorted(deduped, key = _get_priority)
-    print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
+    #print(f"[정렬 후 순서] {[item['subject'] for item in sorted_items]}")
 
     # 정규화 + applicable_drugs + (나이 슬롯은 age_thresholds) 추가
     final_items = []
@@ -246,10 +252,10 @@ def parse_contraindications_for_drugs(drug_names: list[str], llm: ChatOpenAI) ->
     _cache[cache_key] = tuple(final_items)
 
     # 확인용 출력 ----------------------------------------
-    print("\n[역질문 목록]")
-    for i, item in enumerate(_cache[cache_key], 1):
-        print(f"  {i}. subject: {item['subject']}")
-        print(f"     applicable_drugs: {item['applicable_drugs']}")
+    # print("\n[역질문 목록]")
+    # for i, item in enumerate(_cache[cache_key], 1):
+    #     print(f"  {i}. subject: {item['subject']}")
+    #     print(f"     applicable_drugs: {item['applicable_drugs']}")
     # ----------------------------------------------------
 
     return _cache[cache_key]

@@ -79,7 +79,7 @@ class DialogueState:
             for k, v in situation.items()
         )
 
-        print(f"[situation] {situation}")
+        #print(f"[situation] {situation}")
         for subject, value in situation.items():
             # 나이가 숫자로 추출된 경우 10세 이하면 True, 초과면 False
             if subject == "나이" and isinstance(value, (int, float)):
